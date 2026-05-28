@@ -1,6 +1,9 @@
 //! The [`Multivector`] type — an element of the algebra `Cl(P, Q, R)`.
 
-use core::ops::{Add, AddAssign, Neg, Sub, SubAssign};
+use core::fmt;
+use core::ops::{Add, AddAssign, Mul, Neg, Sub, SubAssign};
+
+use crate::signature::blade_product;
 
 /// A multivector in the Clifford algebra `Cl(P, Q, R)`.
 ///
@@ -141,6 +144,121 @@ impl<const P: usize, const Q: usize, const R: usize, const DIM: usize> Neg
     }
 }
 
+// --- Geometric product --------------------------------------------------
+//
+// The first place the signature `(P, Q, R)` actually shows up. The
+// product distributes over the sum of basis blades:
+//
+//     (Σ aᵢ Eᵢ) * (Σ bⱼ Eⱼ) = Σᵢⱼ aᵢ bⱼ (Eᵢ * Eⱼ)
+//
+// and each single-blade product `Eᵢ * Eⱼ` is computed in one shot by
+// `signature::blade_product` (target index = `i XOR j`, sign comes from
+// blade-reordering parity times the metric of every shared generator).
+//
+// Cost: `O(DIM²)` per multiplication — fine for the algebras a human
+// would write by hand (≤ 1024 ops for `Cga3`).
+
+impl<const P: usize, const Q: usize, const R: usize, const DIM: usize> Mul
+    for Multivector<P, Q, R, DIM>
+{
+    type Output = Self;
+    fn mul(self, rhs: Self) -> Self {
+        let mut out = Self::zero();
+        for a in 0..DIM {
+            for b in 0..DIM {
+                let (idx, sign) = blade_product(a, b, P, Q);
+                if sign != 0 {
+                    out.coeffs[idx] += (sign as f64) * self.coeffs[a] * rhs.coeffs[b];
+                }
+            }
+        }
+        out
+    }
+}
+
+// --- Scalar multiplication ----------------------------------------------
+//
+// Linear scaling — nothing geometric — but worth defining on both sides
+// so `2.0 * v` and `v * 2.0` both work.
+
+impl<const P: usize, const Q: usize, const R: usize, const DIM: usize> Mul<f64>
+    for Multivector<P, Q, R, DIM>
+{
+    type Output = Self;
+    fn mul(mut self, rhs: f64) -> Self {
+        for i in 0..DIM {
+            self.coeffs[i] *= rhs;
+        }
+        self
+    }
+}
+
+impl<const P: usize, const Q: usize, const R: usize, const DIM: usize>
+    Mul<Multivector<P, Q, R, DIM>> for f64
+{
+    type Output = Multivector<P, Q, R, DIM>;
+    fn mul(self, rhs: Multivector<P, Q, R, DIM>) -> Multivector<P, Q, R, DIM> {
+        rhs * self
+    }
+}
+
+// --- Display ------------------------------------------------------------
+//
+// Formats as `s + a·e1 + b·e2 + c·e12 + …` skipping zeros and omitting
+// the `1·` for unit-coefficient blades. The zero multivector prints as
+// `0`.
+//
+// Blade labels are generated mechanically from the bit-mask index:
+// bit `k` → `e_{k+1}`. This is signature-agnostic, so in PGA `Cl(3,0,1)`
+// the null generator prints as `e4` rather than the conventional `e0`.
+// We'll fix that when we add per-algebra wrapper types.
+
+impl<const P: usize, const Q: usize, const R: usize, const DIM: usize> fmt::Display
+    for Multivector<P, Q, R, DIM>
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let n = P + Q + R;
+        let mut first = true;
+        for i in 0..DIM {
+            let c = self.coeffs[i];
+            if c == 0.0 {
+                continue;
+            }
+            let neg = c < 0.0;
+            if first {
+                first = false;
+                if neg {
+                    write!(f, "-")?;
+                }
+            } else if neg {
+                write!(f, " - ")?;
+            } else {
+                write!(f, " + ")?;
+            }
+            let a = c.abs();
+            // Suppress "1·" for non-scalar blades.
+            if i == 0 || a != 1.0 {
+                write!(f, "{a}")?;
+                if i != 0 {
+                    write!(f, "·")?;
+                }
+            }
+            if i != 0 {
+                write!(f, "e")?;
+                for k in 0..n {
+                    if i & (1 << k) != 0 {
+                        write!(f, "{}", k + 1)?;
+                    }
+                }
+            }
+        }
+        if first {
+            write!(f, "0")?;
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{Pga3, Vga2, Vga3};
@@ -202,5 +320,111 @@ mod tests {
         a += Vga2::basis(1);
         a -= Vga2::scalar(0.5);
         assert_eq!(a.coeffs, [0.5, 1.0, 0.0, 0.0]);
+    }
+
+    // --- Geometric product (round 2) ------------------------------------
+
+    #[test]
+    fn e1_squares_to_one_in_vga2() {
+        let e1 = Vga2::basis(1);
+        assert_eq!((e1 * e1).coeffs, Vga2::one().coeffs);
+    }
+
+    #[test]
+    fn e2_squares_to_one_in_vga2() {
+        let e2 = Vga2::basis(2);
+        assert_eq!((e2 * e2).coeffs, Vga2::one().coeffs);
+    }
+
+    #[test]
+    fn e1_times_e2_is_e12() {
+        let e1 = Vga2::basis(1);
+        let e2 = Vga2::basis(2);
+        let e12 = Vga2::basis(3); // 0b11
+        assert_eq!((e1 * e2).coeffs, e12.coeffs);
+    }
+
+    #[test]
+    fn vectors_anticommute() {
+        let e1 = Vga2::basis(1);
+        let e2 = Vga2::basis(2);
+        assert_eq!((e2 * e1).coeffs, (-(e1 * e2)).coeffs);
+    }
+
+    #[test]
+    fn pseudoscalar_squares_to_minus_one_in_vga2() {
+        let e12 = Vga2::basis(3);
+        let minus_one = Vga2::scalar(-1.0);
+        assert_eq!((e12 * e12).coeffs, minus_one.coeffs);
+    }
+
+    #[test]
+    fn cross_terms_cancel_in_sum_of_vectors_squared() {
+        // (e1 + e2)² = e1·e1 + e1·e2 + e2·e1 + e2·e2 = 1 - e12 + e12 + 1 = 2
+        let v = Vga2::basis(1) + Vga2::basis(2);
+        assert_eq!((v * v).coeffs, Vga2::scalar(2.0).coeffs);
+    }
+
+    #[test]
+    fn null_generator_squares_to_zero_in_pga3() {
+        // In Cl(3,0,1), bit 3 is the R-group generator.
+        let e4 = Pga3::basis(0b1000);
+        assert_eq!((e4 * e4).coeffs, Pga3::zero().coeffs);
+    }
+
+    #[test]
+    fn geometric_product_is_left_distributive() {
+        // a * (b + c) == a*b + a*c, exercised on a non-trivial pair.
+        let a = Vga3 { coeffs: [1.0, 2.0, 0.0, -1.0, 0.0, 3.0, 0.0, 0.0] };
+        let b = Vga3 { coeffs: [0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 2.0] };
+        let c = Vga3 { coeffs: [2.0, 0.0, 0.0, 1.0, -1.0, 0.0, 1.0, 0.0] };
+        let lhs = a * (b + c);
+        let rhs = (a * b) + (a * c);
+        assert_eq!(lhs.coeffs, rhs.coeffs);
+    }
+
+    // --- Scalar multiplication ------------------------------------------
+
+    #[test]
+    fn scalar_mul_right() {
+        let v = Vga2::basis(1) + Vga2::basis(2);
+        assert_eq!((v * 3.0).coeffs, [0.0, 3.0, 3.0, 0.0]);
+    }
+
+    #[test]
+    fn scalar_mul_left_matches_right() {
+        let v = Vga2 { coeffs: [1.0, -2.0, 0.5, 4.0] };
+        assert_eq!((2.5 * v).coeffs, (v * 2.5).coeffs);
+    }
+
+    // --- Display --------------------------------------------------------
+
+    #[test]
+    fn display_zero() {
+        assert_eq!(format!("{}", Vga2::zero()), "0");
+    }
+
+    #[test]
+    fn display_pure_scalar() {
+        assert_eq!(format!("{}", Vga2::scalar(3.5)), "3.5");
+    }
+
+    #[test]
+    fn display_unit_blade_omits_one_coefficient() {
+        assert_eq!(format!("{}", Vga2::basis(1)), "e1");
+        assert_eq!(format!("{}", Vga2::basis(3)), "e12");
+    }
+
+    #[test]
+    fn display_mixed_grade_with_signs() {
+        // 2 + 3·e1 - e2 + e12
+        let m = Vga2 { coeffs: [2.0, 3.0, -1.0, 1.0] };
+        assert_eq!(format!("{m}"), "2 + 3·e1 - e2 + e12");
+    }
+
+    #[test]
+    fn display_starts_with_minus_when_first_term_negative() {
+        let m = Vga2 { coeffs: [0.0, -2.0, 0.0, 1.0] };
+        assert_eq!(format!("{m}"), "-2·e1 + e12");
     }
 }

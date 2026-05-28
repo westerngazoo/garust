@@ -1,53 +1,43 @@
 //! wizzielyn — the running learning playground for `garust`.
 //!
-//! This file grows alongside the library. Today it just exercises what
-//! the library actually has: constructing multivectors in 2D VGA
-//! `Cl(2, 0, 0)`, adding them, and printing them in human-readable form.
+//! Each round of garust adds a new section here. Today: the geometric
+//! product shows up, and the algebra finally feels like an algebra.
 
-use garust::Vga2;
+use garust::{Pga3, Vga2};
 
 fn main() {
-    // In Cl(2,0,0) the blade layout is: [1, e1, e2, e12].
-    // So a generic 2D multivector looks like:  s + a·e1 + b·e2 + p·e12
-
     let e1 = Vga2::basis(1);
     let e2 = Vga2::basis(2);
+    let e12 = Vga2::basis(3); // 0b11
 
-    // The vector v = 3 e1 + 4 e2 (Euclidean length 5)
-    let v = Vga2 { coeffs: [0.0, 3.0, 4.0, 0.0] };
+    println!("== Cl(2,0,0): 2D Euclidean VGA ==");
+    println!("e1            = {e1}");
+    println!("e2            = {e2}");
+    println!("e1 * e2       = {}    (= e12, the unit bivector)", e1 * e2);
+    println!("e2 * e1       = {}   (anticommutes with e1*e2)", e2 * e1);
+    println!("e1 * e1       = {}    (vectors in P-group square to +1)", e1 * e1);
+    println!("e12 * e12     = {}   (bivector squares to -1 — like i)", e12 * e12);
 
-    let two = Vga2::scalar(2.0);
+    // A non-trivial mixed-grade product. Worked out by hand:
+    //   (2 + e12) * (1 + e1)
+    //     = 2*1 + 2*e1 + e12*1 + e12*e1
+    //     = 2 + 2 e1 + e12 + (e1 e2)(e1)
+    //     = 2 + 2 e1 + e12 - e2
+    let lhs = Vga2::scalar(2.0) + e12;
+    let rhs = Vga2::scalar(1.0) + e1;
+    println!("(2 + e12)*(1 + e1) = {}", lhs * rhs);
 
-    // Sums and negations are just coefficient arithmetic. None of the
-    // *geometric* magic has kicked in yet — that arrives when we
-    // implement the geometric product.
-    let sum = v + two + e1;        // expect 2 + 4 e1 + 4 e2
-    let diff = v - e1 - e2;        // expect 0 + 2 e1 + 3 e2
+    // Scalar scaling, both sides.
+    let v = 3.0 * e1 + 4.0 * e2;
+    println!("v = 3·e1 + 4·e2     = {v}");
+    // Squaring a Euclidean vector returns its squared length as a scalar.
+    println!("v * v               = {}   (= |v|² = 25)", v * v);
 
-    println!("e1            = {}", show(&e1));
-    println!("e2            = {}", show(&e2));
-    println!("v             = {}", show(&v));
-    println!("v + 2 + e1    = {}", show(&sum));
-    println!("v - e1 - e2   = {}", show(&diff));
-    println!("-v            = {}", show(&-v));
-}
-
-fn show(m: &Vga2) -> String {
-    let labels = ["1", "e1", "e2", "e12"];
-    let mut parts: Vec<String> = Vec::new();
-    for (i, &c) in m.coeffs.iter().enumerate() {
-        if c == 0.0 {
-            continue;
-        }
-        parts.push(if i == 0 {
-            format!("{c}")
-        } else {
-            format!("{c}·{}", labels[i])
-        });
-    }
-    if parts.is_empty() {
-        "0".into()
-    } else {
-        parts.join(" + ")
-    }
+    println!();
+    println!("== Cl(3,0,1): 3D PGA — the null generator ==");
+    // In PGA the R-group generator (bit 3) is conventionally called e0;
+    // garust's signature-agnostic Display labels it as e4 for now.
+    let e4 = Pga3::basis(0b1000);
+    println!("e4 (the null e0)    = {e4}");
+    println!("e4 * e4             = {}   (null squares to 0 → whole product vanishes)", e4 * e4);
 }
