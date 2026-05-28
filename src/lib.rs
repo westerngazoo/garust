@@ -29,7 +29,9 @@
 //!
 //! No products yet — geometric, wedge, inner, and friends land next.
 
+pub mod involutions;
 pub mod multivector;
+pub mod products;
 pub mod signature;
 
 pub use multivector::Multivector;
