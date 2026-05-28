@@ -1,0 +1,14 @@
+[package]
+name = "garust"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.79"
+description = "Geometric Algebra in Rust — generic over the Clifford signature Cl(P, Q, R)."
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/westerngazoo/garust"
+keywords = ["geometric-algebra", "clifford-algebra", "math", "ga"]
+categories = ["mathematics"]
+
+[lib]
+name = "garust"
