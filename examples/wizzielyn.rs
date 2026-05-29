@@ -12,12 +12,12 @@ fn main() {
     let r90 = (e12 * (-FRAC_PI_2 / 2.0)).exp();
     println!("R = exp(-π/4 · e12)  = {r90}");
     println!("|R|²                  = {}   (unit norm by construction)", r90.norm_squared());
-    println!("R · e1 · ~R           = {}   (rotate e1 ⇒ e2)", r90.sandwich(&Vga2::basis(1)));
-    println!("R · e2 · ~R           = {}   (rotate e2 ⇒ -e1)", r90.sandwich(&Vga2::basis(2)));
+    println!("R · e1 · ~R           = {}   (rotate e1 ⇒ e2)", r90.sandwich(&Vga2::basis(1)).cleaned(1e-10));
+    println!("R · e2 · ~R           = {}   (rotate e2 ⇒ -e1)", r90.sandwich(&Vga2::basis(2)).cleaned(1e-10));
 
     // R⁻¹ · R = 1
     let r_inv = r90.versor_inverse();
-    println!("R · R⁻¹               = {}", r90 * r_inv);
+    println!("R · R⁻¹               = {}", (r90 * r_inv).cleaned(1e-10));
 
     println!();
     println!("== Rotors in 3D — the axis is fixed ==");
@@ -25,9 +25,9 @@ fn main() {
     let e23 = Vga3::basis(6); // 0b110
     let r3d = (e23 * (-FRAC_PI_2 / 2.0)).exp();
     println!("R = exp(-π/4 · e23)  = {r3d}");
-    println!("R · e1 · ~R           = {}   (axis ⇒ unchanged)", r3d.sandwich(&Vga3::basis(1)));
-    println!("R · e2 · ~R           = {}   (in plane ⇒ rotates to e3)", r3d.sandwich(&Vga3::basis(2)));
-    println!("R · e3 · ~R           = {}   (in plane ⇒ rotates to -e2)", r3d.sandwich(&Vga3::basis(4)));
+    println!("R · e1 · ~R           = {}   (axis ⇒ unchanged)", r3d.sandwich(&Vga3::basis(1)).cleaned(1e-10));
+    println!("R · e2 · ~R           = {}   (in plane ⇒ rotates to e3)", r3d.sandwich(&Vga3::basis(2)).cleaned(1e-10));
+    println!("R · e3 · ~R           = {}   (in plane ⇒ rotates to -e2)", r3d.sandwich(&Vga3::basis(4)).cleaned(1e-10));
 
     println!();
     println!("== Reflection: sandwich with a unit vector ==");
@@ -49,7 +49,7 @@ fn main() {
     let after_both = n2.sandwich(&after_first);
     println!("v = e2");
     println!("after n1·v·~n1        = {after_first}   (e2 ⊥ x-axis ⇒ flips)");
-    println!("then n2·(...)·~n2     = {after_both}   (net: e2 ⇒ -e1, a 90° rotation)");
+    println!("then n2·(...)·~n2     = {}   (net: e2 ⇒ -e1, a 90° rotation)", after_both.cleaned(1e-10));
 
     println!();
     println!("== Bonus: exp on a vector in Cl(1,0,0) — hyperbolic Euler ==");

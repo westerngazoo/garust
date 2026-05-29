@@ -71,6 +71,24 @@ impl<const P: usize, const Q: usize, const R: usize, const DIM: usize>
     pub fn scalar_part(&self) -> f64 {
         self.coeffs[0]
     }
+
+    /// Returns a copy of `self` with every coefficient whose magnitude
+    /// is below `tol` set to zero.
+    ///
+    /// Useful for suppressing floating-point dust before printing or
+    /// comparing. Rotor sandwiches and exp products in particular leak
+    /// `~1e-16`-magnitude noise into blades that should be exactly
+    /// zero by symmetry; passing `1e-10` knocks those out while
+    /// leaving any real-magnitude coefficient untouched.
+    pub fn cleaned(&self, tol: f64) -> Self {
+        let mut out = *self;
+        for i in 0..DIM {
+            if out.coeffs[i].abs() < tol {
+                out.coeffs[i] = 0.0;
+            }
+        }
+        out
+    }
 }
 
 impl<const P: usize, const Q: usize, const R: usize, const DIM: usize> Default
@@ -426,5 +444,25 @@ mod tests {
     fn display_starts_with_minus_when_first_term_negative() {
         let m = Vga2 { coeffs: [0.0, -2.0, 0.0, 1.0] };
         assert_eq!(format!("{m}"), "-2·e1 + e12");
+    }
+
+    // --- cleaned() ------------------------------------------------------
+
+    #[test]
+    fn cleaned_zeros_subthreshold_coefficients() {
+        let m = Vga2 { coeffs: [1e-15, 1.0, -1e-13, 2.0] };
+        assert_eq!(m.cleaned(1e-12).coeffs, [0.0, 1.0, 0.0, 2.0]);
+    }
+
+    #[test]
+    fn cleaned_preserves_significant_coefficients() {
+        let m = Vga2 { coeffs: [0.5, -0.3, 0.1, 1e-5] };
+        assert_eq!(m.cleaned(1e-12).coeffs, m.coeffs);
+    }
+
+    #[test]
+    fn cleaned_at_zero_tolerance_is_identity() {
+        let m = Vga2 { coeffs: [1e-300, 1.0, -2.0, 0.0] };
+        assert_eq!(m.cleaned(0.0).coeffs, m.coeffs);
     }
 }
