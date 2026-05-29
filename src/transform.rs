@@ -241,4 +241,64 @@ mod tests {
         assert!((e.coeffs[0] - t.cosh()).abs() < 1e-12);
         assert!((e.coeffs[1] - t.sinh()).abs() < 1e-12);
     }
+
+    // --- PGA translators (Cl(3,0,1)) -----------------------------------
+
+    #[test]
+    fn null_bivector_squares_to_zero_in_pga3() {
+        // e0·e1 lives at bit positions {0, 3} (bit 3 is the R generator).
+        // It's a null bivector, so its square must be zero.
+        use crate::Pga3;
+        let e0 = Pga3::basis(8); // bit 3
+        let e1 = Pga3::basis(1);
+        let b = e0 * e1;
+        let sq = b * b;
+        approx_eq(&sq.coeffs, &Pga3::zero().coeffs, 1e-12);
+    }
+
+    #[test]
+    fn exp_of_null_bivector_is_one_plus_bivector() {
+        // c = 0 branch of exp: exp(B) = 1 + B when B² = 0.
+        use crate::Pga3;
+        let e0 = Pga3::basis(8);
+        let e1 = Pga3::basis(1);
+        let b = (e0 * e1) * 0.42;
+        let expected = Pga3::one() + b;
+        approx_eq(&b.exp().coeffs, &expected.coeffs, 1e-12);
+    }
+
+    #[test]
+    fn pga_translator_moves_origin_to_target_point() {
+        // Translator T = exp(-d/2 · e0·e1) translates by d in e1.
+        // Origin point P = e1·e2·e3 (trivector convention).
+        // Target point at (d, 0, 0): P_d = e1·e2·e3 − d · e0·e2·e3.
+        use crate::Pga3;
+        let d = 3.0;
+        let e0 = Pga3::basis(8);
+        let e1 = Pga3::basis(1);
+        let e2 = Pga3::basis(2);
+        let e3 = Pga3::basis(4);
+        let t = ((e0 * e1) * (-d / 2.0)).exp();
+        let origin = e1 * e2 * e3;
+        let translated = t.sandwich(&origin);
+        let expected = e1 * e2 * e3 - (e0 * e2 * e3) * d;
+        approx_eq(&translated.coeffs, &expected.coeffs, 1e-12);
+    }
+
+    #[test]
+    fn pga_translator_inverse_equals_reverse_translator() {
+        // Translators are versors: T · ~T = 1, so ~T = T⁻¹.
+        // For null bivectors this is also exp(+d/2 e0e1), i.e. negate
+        // the displacement.
+        use crate::Pga3;
+        let d = 1.7;
+        let e0 = Pga3::basis(8);
+        let e1 = Pga3::basis(1);
+        let t = ((e0 * e1) * (-d / 2.0)).exp();
+        let t_inv = ((e0 * e1) * (d / 2.0)).exp();
+        let prod = t * t_inv;
+        approx_eq(&prod.coeffs, &Pga3::one().coeffs, 1e-12);
+        // And ~T equals the inverse-translator we just built.
+        approx_eq(&t.reverse().coeffs, &t_inv.coeffs, 1e-12);
+    }
 }

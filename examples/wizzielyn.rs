@@ -59,4 +59,51 @@ fn main() {
     type Cl10 = Multivector<1, 0, 0, 2>;
     let v = Cl10 { coeffs: [0.0, 0.5] };  // 0.5 · e1
     println!("exp(0.5 e1) in Cl(1,0,0) = {}   (= cosh(0.5) + sinh(0.5)·e1)", v.exp());
+
+    println!();
+    println!("== PGA Cl(3,0,1): translation falls out of the same exp ==");
+    // In Pga3 our bit-mask convention puts the null generator at bit 3.
+    // Conventionally that's called e0 (PGA literature) — bit-index e4
+    // when written by Display.
+    use garust::Pga3;
+    let e0 = Pga3::basis(8); // the null generator (R-group)
+    let e1 = Pga3::basis(1);
+    let e2 = Pga3::basis(2);
+    let e3 = Pga3::basis(4);
+
+    // The null bivector e0·e1 squares to zero — that's the whole trick.
+    let b = e0 * e1;
+    println!("e0·e1                 = {b}");
+    println!("(e0·e1)²              = {}   (null bivector!)", (b * b).cleaned(1e-10));
+
+    // Build a translator for displacement d = 3 in the e1 direction.
+    // Because B² = 0 the exp series collapses to T = 1 + (-d/2)·B.
+    let d = 3.0;
+    let t = ((e0 * e1) * (-d / 2.0)).exp();
+    println!("T = exp(-3/2 · e0·e1) = {t}");
+
+    // Modern PGA point convention: a point at (x, y, z) is the trivector
+    //   P = e1·e2·e3 − x·e0·e2·e3 + y·e0·e1·e3 − z·e0·e1·e2
+    let origin = e1 * e2 * e3;
+    let translated = t.sandwich(&origin).cleaned(1e-10);
+    println!("T · (e1·e2·e3) · ~T   = {translated}");
+    println!("                        (origin → point at (3, 0, 0):");
+    println!("                         note the new e2e3e0 trivector with coefficient 3)");
+
+    // Compose a rotor with a translator → a motor (rigid-body transform).
+    // R rotates 90° about the e1 axis (in the e2-e3 plane).
+    let r = ((e2 * e3) * (-FRAC_PI_2 / 2.0)).exp();
+    let motor = t * r;
+    println!();
+    println!("Motor M = T · R       = {}", motor.cleaned(1e-10));
+    println!("|M|²                  = {}   (still unit-norm — motors are versors)", motor.norm_squared());
+
+    // Apply the motor to a point at (0, 1, 0). The rotation should
+    // send (0, 1, 0) → (0, 0, 1), then translation by 3 in e1 gives
+    // (3, 0, 1). In PGA point form: e123 − 3·e0e2e3 + 0·e0e1e3 − 1·e0e1e2
+    // which Display shows as  e123 − e124 − 3·e234.
+    let p010 = e1 * e2 * e3 + e0 * e1 * e3;
+    let moved = motor.sandwich(&p010).cleaned(1e-10);
+    println!("M · point(0,1,0) · ~M = {moved}");
+    println!("                        (rotate (0,1,0) → (0,0,1), translate → (3,0,1))");
 }
