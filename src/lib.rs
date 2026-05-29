@@ -33,6 +33,7 @@ pub mod involutions;
 pub mod multivector;
 pub mod products;
 pub mod signature;
+pub mod transform;
 
 pub use multivector::Multivector;
 
