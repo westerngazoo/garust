@@ -26,10 +26,11 @@
 //!   (norms, projections, the kernel of the versor inverse).
 
 use crate::multivector::Multivector;
+use crate::scalar::Scalar;
 use crate::signature::{blade_product, grade_of, swap_sign};
 
-impl<const P: usize, const Q: usize, const R: usize, const DIM: usize>
-    Multivector<P, Q, R, DIM>
+impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize>
+    Multivector<T, P, Q, R, DIM>
 {
     /// Grade-`k` projection `⟨M⟩_k`. Zeros every coefficient whose
     /// blade has popcount different from `k`.
@@ -54,7 +55,7 @@ impl<const P: usize, const Q: usize, const R: usize, const DIM: usize>
         let mut out = Self::zero();
         for a in 0..DIM {
             let ca = self.coeffs[a];
-            if ca == 0.0 {
+            if ca == T::ZERO {
                 continue;
             }
             for b in 0..DIM {
@@ -62,7 +63,12 @@ impl<const P: usize, const Q: usize, const R: usize, const DIM: usize>
                     continue;
                 }
                 let sign = swap_sign(a, b);
-                out.coeffs[a | b] += (sign as f64) * ca * rhs.coeffs[b];
+                let term = ca * rhs.coeffs[b];
+                if sign > 0 {
+                    out.coeffs[a | b] += term;
+                } else {
+                    out.coeffs[a | b] -= term;
+                }
             }
         }
         out
@@ -82,7 +88,7 @@ impl<const P: usize, const Q: usize, const R: usize, const DIM: usize>
         let mut out = Self::zero();
         for a in 0..DIM {
             let ca = self.coeffs[a];
-            if ca == 0.0 {
+            if ca == T::ZERO {
                 continue;
             }
             let ga = grade_of(a);
@@ -91,7 +97,7 @@ impl<const P: usize, const Q: usize, const R: usize, const DIM: usize>
             }
             for b in 0..DIM {
                 let cb = rhs.coeffs[b];
-                if cb == 0.0 {
+                if cb == T::ZERO {
                     continue;
                 }
                 let gb = grade_of(b);
@@ -101,7 +107,12 @@ impl<const P: usize, const Q: usize, const R: usize, const DIM: usize>
                 let target = (ga as isize - gb as isize).unsigned_abs();
                 let (idx, sign) = blade_product(a, b, P, Q);
                 if sign != 0 && grade_of(idx) == target {
-                    out.coeffs[idx] += (sign as f64) * ca * cb;
+                    let term = ca * cb;
+                    if sign > 0 {
+                        out.coeffs[idx] += term;
+                    } else {
+                        out.coeffs[idx] -= term;
+                    }
                 }
             }
         }
@@ -112,14 +123,19 @@ impl<const P: usize, const Q: usize, const R: usize, const DIM: usize>
     ///
     /// A pair of basis blades multiplies to a scalar only when their
     /// indices are equal (so `a ^ b == 0`), so this collapses to a
-    /// single diagonal loop. Returns `f64` directly — the answer is
+    /// single diagonal loop. Returns `T` directly — the answer is
     /// always a scalar by construction.
-    pub fn scalar_product(&self, rhs: &Self) -> f64 {
-        let mut acc = 0.0_f64;
+    pub fn scalar_product(&self, rhs: &Self) -> T {
+        let mut acc = T::ZERO;
         for i in 0..DIM {
             let (_idx, sign) = blade_product(i, i, P, Q);
             if sign != 0 {
-                acc += (sign as f64) * self.coeffs[i] * rhs.coeffs[i];
+                let term = self.coeffs[i] * rhs.coeffs[i];
+                if sign > 0 {
+                    acc += term;
+                } else {
+                    acc -= term;
+                }
             }
         }
         acc
@@ -187,7 +203,7 @@ mod tests {
     fn inner_is_signature_aware() {
         // In Cl(0,1,0) the only vector squares to -1, so v · v = -1.
         use crate::Multivector;
-        type Anti = Multivector<0, 1, 0, 2>;
+        type Anti = Multivector<f64, 0, 1, 0, 2>;
         let e1 = Anti::basis(1);
         assert_eq!(e1.inner(&e1).coeffs, Anti::scalar(-1.0).coeffs);
     }

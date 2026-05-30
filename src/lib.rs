@@ -1,8 +1,9 @@
 //! # garust — Geometric Algebra for Rust
 //!
-//! A learning-oriented implementation of Geometric Algebra
-//! (a.k.a. Clifford Algebra) over `f64`, generic in the signature so
-//! you pick your algebra at the type level.
+//! A from-scratch, zero-dependency implementation of Geometric Algebra
+//! (a.k.a. Clifford Algebra), generic in **both** the signature and the
+//! scalar type so you pick your algebra and your numeric precision at
+//! the type level.
 //!
 //! ## The signature `Cl(P, Q, R)` in one paragraph
 //!
@@ -21,33 +22,49 @@
 //! - `Cl(1, 3, 0)` — Spacetime Algebra — has 16 blades; signature
 //!   `(+, −, −, −)`
 //!
-//! ## What's here so far
+//! ## Generic over the scalar type
 //!
-//! Just the bones:
-//! - [`Multivector`] — the dense `[f64; 2^N]` element type
-//! - addition, subtraction, negation, and equality
+//! [`Multivector`] is parameterised by a coefficient type `T`
+//! implementing [`Scalar`] (and [`Real`] for the exponential). `f32`
+//! and `f64` are provided. Every algebra alias defaults to `f64`, so
+//! `Vga3` means `Vga3<f64>`, but you can write `Vga3<f32>` for graphics
+//! work or plug in your own scalar type.
 //!
-//! No products yet — geometric, wedge, inner, and friends land next.
+//! ```
+//! use garust::Vga3;
+//! let v = Vga3::<f32>::basis(1) + Vga3::<f32>::basis(2);
+//! assert_eq!((v * v).scalar_part(), 2.0_f32);
+//! ```
+//!
+//! ## What's implemented
+//!
+//! - [`Multivector`] — dense `[T; 2^N]` element type
+//! - linear ops: add, sub, neg, scalar multiplication, equality
+//! - the geometric product, plus wedge `∧`, inner `·`, scalar product
+//! - grade projection, reverse, grade involution, Clifford conjugation
+//! - versor inverse, the sandwich product, and a closed-form `exp`
 
 pub mod involutions;
 pub mod multivector;
 pub mod products;
+pub mod scalar;
 pub mod signature;
 pub mod transform;
 
 pub use multivector::Multivector;
+pub use scalar::{Real, Scalar};
 
 /// 2D Euclidean Geometric Algebra `Cl(2, 0, 0)` — 4 basis blades.
-pub type Vga2 = Multivector<2, 0, 0, 4>;
+pub type Vga2<T = f64> = Multivector<T, 2, 0, 0, 4>;
 
 /// 3D Euclidean Geometric Algebra `Cl(3, 0, 0)` — 8 basis blades.
-pub type Vga3 = Multivector<3, 0, 0, 8>;
+pub type Vga3<T = f64> = Multivector<T, 3, 0, 0, 8>;
 
 /// 3D Projective Geometric Algebra `Cl(3, 0, 1)` — 16 basis blades.
-pub type Pga3 = Multivector<3, 0, 1, 16>;
+pub type Pga3<T = f64> = Multivector<T, 3, 0, 1, 16>;
 
 /// 3D Conformal Geometric Algebra `Cl(4, 1, 0)` — 32 basis blades.
-pub type Cga3 = Multivector<4, 1, 0, 32>;
+pub type Cga3<T = f64> = Multivector<T, 4, 1, 0, 32>;
 
 /// Spacetime Algebra `Cl(1, 3, 0)` — 16 basis blades, `(+, −, −, −)`.
-pub type Sta = Multivector<1, 3, 0, 16>;
+pub type Sta<T = f64> = Multivector<T, 1, 3, 0, 16>;

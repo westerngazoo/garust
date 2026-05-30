@@ -56,7 +56,7 @@ fn main() {
     // In a P-group-only 1D algebra, e1² = +1 makes exp behave with
     // cosh/sinh rather than cos/sin.
     use garust::Multivector;
-    type Cl10 = Multivector<1, 0, 0, 2>;
+    type Cl10 = Multivector<f64, 1, 0, 0, 2>;
     let v = Cl10 { coeffs: [0.0, 0.5] };  // 0.5 · e1
     println!("exp(0.5 e1) in Cl(1,0,0) = {}   (= cosh(0.5) + sinh(0.5)·e1)", v.exp());
 

@@ -26,10 +26,11 @@
 //! isn't necessarily positive and isn't a norm in any geometric sense.
 
 use crate::multivector::Multivector;
+use crate::scalar::Scalar;
 use crate::signature::grade_of;
 
-impl<const P: usize, const Q: usize, const R: usize, const DIM: usize>
-    Multivector<P, Q, R, DIM>
+impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize>
+    Multivector<T, P, Q, R, DIM>
 {
     /// Reverse `~M`. Reverses the order of generators in every blade,
     /// which flips the sign whenever the grade `k` satisfies
@@ -71,7 +72,7 @@ impl<const P: usize, const Q: usize, const R: usize, const DIM: usize>
     /// `⟨M * ~M⟩_0`. For versors (vectors, rotors, and their products)
     /// this is the squared magnitude. For other multivectors it's still
     /// a well-defined scalar but its geometric meaning is murkier.
-    pub fn norm_squared(&self) -> f64 {
+    pub fn norm_squared(&self) -> T {
         self.scalar_product(&self.reverse())
     }
 }

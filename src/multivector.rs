@@ -3,58 +3,61 @@
 use core::fmt;
 use core::ops::{Add, AddAssign, Mul, Neg, Sub, SubAssign};
 
+use crate::scalar::Scalar;
 use crate::signature::blade_product;
 
-/// A multivector in the Clifford algebra `Cl(P, Q, R)`.
+/// A multivector in the Clifford algebra `Cl(P, Q, R)` with coefficients
+/// of type `T`.
 ///
+/// - `T` = coefficient type (any [`Scalar`]; `f32`/`f64` provided)
 /// - `P` = number of basis vectors that square to `+1`
 /// - `Q` = number of basis vectors that square to `-1`
 /// - `R` = number of basis vectors that square to `0` (degenerate / null)
 /// - `DIM` = `2^(P+Q+R)`, the number of basis blades
 ///
-/// `DIM` is a fourth const parameter only because stable Rust can't yet
-/// evaluate `1 << (P+Q+R)` in a const-generic array length position.
+/// `DIM` is a trailing const parameter only because stable Rust can't
+/// yet evaluate `1 << (P+Q+R)` in a const-generic array length position.
 /// A const assertion below catches any mismatch at compile time, and the
 /// type aliases in [`crate`] (`Vga2`, `Vga3`, `Pga3`, …) mean end users
 /// almost never need to type the redundant `DIM`.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Multivector<const P: usize, const Q: usize, const R: usize, const DIM: usize> {
+pub struct Multivector<T, const P: usize, const Q: usize, const R: usize, const DIM: usize> {
     /// Coefficient of each basis blade, indexed by the bitmask convention
     /// in [`crate::signature`]. `coeffs[0]` is always the scalar part.
-    pub coeffs: [f64; DIM],
+    pub coeffs: [T; DIM],
 }
 
-impl<const P: usize, const Q: usize, const R: usize, const DIM: usize>
-    Multivector<P, Q, R, DIM>
+impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize>
+    Multivector<T, P, Q, R, DIM>
 {
     /// Compile-time check that `DIM == 2^(P+Q+R)`. Referencing this in
     /// every constructor makes the check actually fire when the type is
     /// used, not just when it's declared somewhere.
     const _DIM_CHECK: () = assert!(
         DIM == 1 << (P + Q + R),
-        "garust: Multivector<P,Q,R,DIM> requires DIM == 2^(P+Q+R)",
+        "garust: Multivector<T,P,Q,R,DIM> requires DIM == 2^(P+Q+R)",
     );
 
     /// The zero multivector.
     pub fn zero() -> Self {
         let _ = Self::_DIM_CHECK;
-        Self { coeffs: [0.0; DIM] }
+        Self { coeffs: [T::ZERO; DIM] }
     }
 
     /// A pure scalar `s + 0·e1 + 0·e2 + …`.
-    pub fn scalar(s: f64) -> Self {
+    pub fn scalar(s: T) -> Self {
         let mut m = Self::zero();
         m.coeffs[0] = s;
         m
     }
 
     /// The multiplicative identity (scalar `1`). Named `one` because
-    /// it's also `1` under the (not-yet-implemented) geometric product.
+    /// it's also `1` under the geometric product.
     pub fn one() -> Self {
-        Self::scalar(1.0)
+        Self::scalar(T::ONE)
     }
 
-    /// The basis blade at the given index, with coefficient `1.0`.
+    /// The basis blade at the given index, with coefficient `1`.
     /// See [`crate::signature`] for the indexing convention. Panics if
     /// `index >= DIM`.
     pub fn basis(index: usize) -> Self {
@@ -63,12 +66,12 @@ impl<const P: usize, const Q: usize, const R: usize, const DIM: usize>
             "basis blade index {index} out of range for DIM = {DIM}",
         );
         let mut m = Self::zero();
-        m.coeffs[index] = 1.0;
+        m.coeffs[index] = T::ONE;
         m
     }
 
     /// The scalar (grade-0) part of the multivector.
-    pub fn scalar_part(&self) -> f64 {
+    pub fn scalar_part(&self) -> T {
         self.coeffs[0]
     }
 
@@ -80,19 +83,19 @@ impl<const P: usize, const Q: usize, const R: usize, const DIM: usize>
     /// `~1e-16`-magnitude noise into blades that should be exactly
     /// zero by symmetry; passing `1e-10` knocks those out while
     /// leaving any real-magnitude coefficient untouched.
-    pub fn cleaned(&self, tol: f64) -> Self {
+    pub fn cleaned(&self, tol: T) -> Self {
         let mut out = *self;
         for i in 0..DIM {
             if out.coeffs[i].abs() < tol {
-                out.coeffs[i] = 0.0;
+                out.coeffs[i] = T::ZERO;
             }
         }
         out
     }
 }
 
-impl<const P: usize, const Q: usize, const R: usize, const DIM: usize> Default
-    for Multivector<P, Q, R, DIM>
+impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize> Default
+    for Multivector<T, P, Q, R, DIM>
 {
     fn default() -> Self {
         Self::zero()
@@ -106,8 +109,8 @@ impl<const P: usize, const Q: usize, const R: usize, const DIM: usize> Default
 // in `R^DIM`. None of the *geometric* part of geometric algebra shows
 // up yet; that's all hiding in the product, which is coming next.
 
-impl<const P: usize, const Q: usize, const R: usize, const DIM: usize> Add
-    for Multivector<P, Q, R, DIM>
+impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize> Add
+    for Multivector<T, P, Q, R, DIM>
 {
     type Output = Self;
     fn add(mut self, rhs: Self) -> Self {
@@ -118,8 +121,8 @@ impl<const P: usize, const Q: usize, const R: usize, const DIM: usize> Add
     }
 }
 
-impl<const P: usize, const Q: usize, const R: usize, const DIM: usize> AddAssign
-    for Multivector<P, Q, R, DIM>
+impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize> AddAssign
+    for Multivector<T, P, Q, R, DIM>
 {
     fn add_assign(&mut self, rhs: Self) {
         for i in 0..DIM {
@@ -128,8 +131,8 @@ impl<const P: usize, const Q: usize, const R: usize, const DIM: usize> AddAssign
     }
 }
 
-impl<const P: usize, const Q: usize, const R: usize, const DIM: usize> Sub
-    for Multivector<P, Q, R, DIM>
+impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize> Sub
+    for Multivector<T, P, Q, R, DIM>
 {
     type Output = Self;
     fn sub(mut self, rhs: Self) -> Self {
@@ -140,8 +143,8 @@ impl<const P: usize, const Q: usize, const R: usize, const DIM: usize> Sub
     }
 }
 
-impl<const P: usize, const Q: usize, const R: usize, const DIM: usize> SubAssign
-    for Multivector<P, Q, R, DIM>
+impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize> SubAssign
+    for Multivector<T, P, Q, R, DIM>
 {
     fn sub_assign(&mut self, rhs: Self) {
         for i in 0..DIM {
@@ -150,8 +153,8 @@ impl<const P: usize, const Q: usize, const R: usize, const DIM: usize> SubAssign
     }
 }
 
-impl<const P: usize, const Q: usize, const R: usize, const DIM: usize> Neg
-    for Multivector<P, Q, R, DIM>
+impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize> Neg
+    for Multivector<T, P, Q, R, DIM>
 {
     type Output = Self;
     fn neg(mut self) -> Self {
@@ -176,8 +179,8 @@ impl<const P: usize, const Q: usize, const R: usize, const DIM: usize> Neg
 // Cost: `O(DIM²)` per multiplication — fine for the algebras a human
 // would write by hand (≤ 1024 ops for `Cga3`).
 
-impl<const P: usize, const Q: usize, const R: usize, const DIM: usize> Mul
-    for Multivector<P, Q, R, DIM>
+impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize> Mul
+    for Multivector<T, P, Q, R, DIM>
 {
     type Output = Self;
     fn mul(self, rhs: Self) -> Self {
@@ -186,7 +189,12 @@ impl<const P: usize, const Q: usize, const R: usize, const DIM: usize> Mul
             for b in 0..DIM {
                 let (idx, sign) = blade_product(a, b, P, Q);
                 if sign != 0 {
-                    out.coeffs[idx] += (sign as f64) * self.coeffs[a] * rhs.coeffs[b];
+                    let term = self.coeffs[a] * rhs.coeffs[b];
+                    if sign > 0 {
+                        out.coeffs[idx] += term;
+                    } else {
+                        out.coeffs[idx] -= term;
+                    }
                 }
             }
         }
@@ -197,13 +205,16 @@ impl<const P: usize, const Q: usize, const R: usize, const DIM: usize> Mul
 // --- Scalar multiplication ----------------------------------------------
 //
 // Linear scaling — nothing geometric — but worth defining on both sides
-// so `2.0 * v` and `v * 2.0` both work.
+// so `2.0 * v` and `v * 2.0` both work. The right side (`v * s`) is
+// generic over the scalar type; the left side (`s * v`) has to be
+// written out per concrete scalar because coherence forbids a blanket
+// `impl<T> Mul<Multivector<T, …>> for T`.
 
-impl<const P: usize, const Q: usize, const R: usize, const DIM: usize> Mul<f64>
-    for Multivector<P, Q, R, DIM>
+impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize> Mul<T>
+    for Multivector<T, P, Q, R, DIM>
 {
     type Output = Self;
-    fn mul(mut self, rhs: f64) -> Self {
+    fn mul(mut self, rhs: T) -> Self {
         for i in 0..DIM {
             self.coeffs[i] *= rhs;
         }
@@ -211,14 +222,21 @@ impl<const P: usize, const Q: usize, const R: usize, const DIM: usize> Mul<f64>
     }
 }
 
-impl<const P: usize, const Q: usize, const R: usize, const DIM: usize>
-    Mul<Multivector<P, Q, R, DIM>> for f64
-{
-    type Output = Multivector<P, Q, R, DIM>;
-    fn mul(self, rhs: Multivector<P, Q, R, DIM>) -> Multivector<P, Q, R, DIM> {
-        rhs * self
-    }
+macro_rules! impl_left_scalar_mul {
+    ($t:ty) => {
+        impl<const P: usize, const Q: usize, const R: usize, const DIM: usize>
+            Mul<Multivector<$t, P, Q, R, DIM>> for $t
+        {
+            type Output = Multivector<$t, P, Q, R, DIM>;
+            fn mul(self, rhs: Multivector<$t, P, Q, R, DIM>) -> Self::Output {
+                rhs * self
+            }
+        }
+    };
 }
+
+impl_left_scalar_mul!(f32);
+impl_left_scalar_mul!(f64);
 
 // --- Display ------------------------------------------------------------
 //
@@ -231,18 +249,18 @@ impl<const P: usize, const Q: usize, const R: usize, const DIM: usize>
 // the null generator prints as `e4` rather than the conventional `e0`.
 // We'll fix that when we add per-algebra wrapper types.
 
-impl<const P: usize, const Q: usize, const R: usize, const DIM: usize> fmt::Display
-    for Multivector<P, Q, R, DIM>
+impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize> fmt::Display
+    for Multivector<T, P, Q, R, DIM>
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let n = P + Q + R;
         let mut first = true;
         for i in 0..DIM {
             let c = self.coeffs[i];
-            if c == 0.0 {
+            if c == T::ZERO {
                 continue;
             }
-            let neg = c < 0.0;
+            let neg = c < T::ZERO;
             if first {
                 first = false;
                 if neg {
@@ -255,7 +273,7 @@ impl<const P: usize, const Q: usize, const R: usize, const DIM: usize> fmt::Disp
             }
             let a = c.abs();
             // Suppress "1·" for non-scalar blades.
-            if i == 0 || a != 1.0 {
+            if i == 0 || a != T::ONE {
                 write!(f, "{a}")?;
                 if i != 0 {
                     write!(f, "·")?;
@@ -464,5 +482,25 @@ mod tests {
     fn cleaned_at_zero_tolerance_is_identity() {
         let m = Vga2 { coeffs: [1e-300, 1.0, -2.0, 0.0] };
         assert_eq!(m.cleaned(0.0).coeffs, m.coeffs);
+    }
+
+    // --- Scalar genericity ----------------------------------------------
+
+    #[test]
+    fn works_over_f32() {
+        // The whole pipeline must run with f32 coefficients.
+        let e1 = Vga3::<f32>::basis(1);
+        let e2 = Vga3::<f32>::basis(2);
+        // e1 * e2 == e12 (index 3)
+        assert_eq!((e1 * e2).coeffs, Vga3::<f32>::basis(3).coeffs);
+        // (3 e1 + 4 e2)² == 25 as f32
+        let v = e1 * 3.0_f32 + e2 * 4.0_f32;
+        assert_eq!((v * v).scalar_part(), 25.0_f32);
+    }
+
+    #[test]
+    fn f32_scalar_mul_both_sides() {
+        let v = Vga2::<f32>::basis(1);
+        assert_eq!((2.0_f32 * v).coeffs, (v * 2.0_f32).coeffs);
     }
 }

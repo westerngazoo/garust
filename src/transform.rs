@@ -15,9 +15,10 @@
 //! reverse-product `(1+e1)(1+e1) = 2 + 2e1` is not a scalar.
 
 use crate::multivector::Multivector;
+use crate::scalar::{max, Real, Scalar};
 
-impl<const P: usize, const Q: usize, const R: usize, const DIM: usize>
-    Multivector<P, Q, R, DIM>
+impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize>
+    Multivector<T, P, Q, R, DIM>
 {
     /// Inverse `M⁻¹ = ~M / ⟨M ~M⟩_0`, defined for versors.
     ///
@@ -28,16 +29,16 @@ impl<const P: usize, const Q: usize, const R: usize, const DIM: usize>
     pub fn try_versor_inverse(&self) -> Option<Self> {
         let prod = *self * self.reverse();
         let scalar = prod.scalar_part();
-        let tol = 1e-10 * scalar.abs().max(1.0);
+        let tol = T::from_f64(1e-10) * max(scalar.abs(), T::ONE);
         for i in 1..DIM {
             if prod.coeffs[i].abs() > tol {
                 return None;
             }
         }
-        if scalar == 0.0 {
+        if scalar == T::ZERO {
             return None;
         }
-        Some(self.reverse() * (1.0 / scalar))
+        Some(self.reverse() * (T::ONE / scalar))
     }
 
     /// Inverse of a versor. Panics if `self` is not a versor (in the
@@ -67,7 +68,11 @@ impl<const P: usize, const Q: usize, const R: usize, const DIM: usize>
     pub fn sandwich(&self, x: &Self) -> Self {
         *self * *x * self.reverse()
     }
+}
 
+impl<T: Real, const P: usize, const Q: usize, const R: usize, const DIM: usize>
+    Multivector<T, P, Q, R, DIM>
+{
     /// Closed-form exponential `exp(self)` for an element whose square
     /// is a scalar.
     ///
@@ -96,17 +101,17 @@ impl<const P: usize, const Q: usize, const R: usize, const DIM: usize>
         debug_assert!(
             {
                 let scalar = sq.scalar_part();
-                let tol = 1e-9 * scalar.abs().max(1.0);
+                let tol = T::from_f64(1e-9) * max(scalar.abs(), T::ONE);
                 (1..DIM).all(|i| sq.coeffs[i].abs() <= tol)
             },
             "Multivector::exp: self² is not a scalar; the closed-form \
              formula only applies to elements with scalar square",
         );
         let c = sq.scalar_part();
-        if c < 0.0 {
+        if c < T::ZERO {
             let s = (-c).sqrt();
             Self::scalar(s.cos()) + *self * (s.sin() / s)
-        } else if c > 0.0 {
+        } else if c > T::ZERO {
             let s = c.sqrt();
             Self::scalar(s.cosh()) + *self * (s.sinh() / s)
         } else {
@@ -234,7 +239,7 @@ mod tests {
     fn exp_of_vector_in_p_group_uses_cosh_sinh() {
         // In Cl(1,0,0): e1² = +1, so exp(t e1) = cosh(t) + sinh(t) e1.
         use crate::Multivector;
-        type Cl10 = Multivector<1, 0, 0, 2>;
+        type Cl10 = Multivector<f64, 1, 0, 0, 2>;
         let t = 0.5;
         let v = Cl10 { coeffs: [0.0, t] };
         let e = v.exp();
