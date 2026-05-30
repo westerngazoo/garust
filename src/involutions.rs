@@ -62,7 +62,12 @@ impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize
     pub fn conjugate(&self) -> Self {
         let mut out = *self;
         for i in 0..DIM {
-            if ((grade_of(i) + 1) / 2) & 1 == 1 {
+            // The sign exponent is k(k+1)/2 mod 2; (k+1)/2 has the same
+            // parity, so we test that. Written as explicit arithmetic
+            // rather than div_ceil to mirror the textbook formula.
+            #[allow(clippy::manual_div_ceil)]
+            let flip = ((grade_of(i) + 1) / 2) & 1 == 1;
+            if flip {
                 out.coeffs[i] = -out.coeffs[i];
             }
         }

@@ -41,7 +41,9 @@ impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize
     /// The zero multivector.
     pub fn zero() -> Self {
         // Force the const-assert below to evaluate at monomorphization.
-        Self::_DIM_CHECK;
+        // The explicit unit pattern keeps both clippy::let_unit_value
+        // and the path_statements lint happy.
+        let () = Self::_DIM_CHECK;
         Self { coeffs: [T::ZERO; DIM] }
     }
 
