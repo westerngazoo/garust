@@ -40,7 +40,8 @@ impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize
 
     /// The zero multivector.
     pub fn zero() -> Self {
-        let _ = Self::_DIM_CHECK;
+        // Force the const-assert below to evaluate at monomorphization.
+        Self::_DIM_CHECK;
         Self { coeffs: [T::ZERO; DIM] }
     }
 
@@ -488,19 +489,23 @@ mod tests {
 
     #[test]
     fn works_over_f32() {
+        use crate::{Vga2f, Vga3f};
         // The whole pipeline must run with f32 coefficients.
-        let e1 = Vga3::<f32>::basis(1);
-        let e2 = Vga3::<f32>::basis(2);
+        let e1 = Vga3f::basis(1);
+        let e2 = Vga3f::basis(2);
         // e1 * e2 == e12 (index 3)
-        assert_eq!((e1 * e2).coeffs, Vga3::<f32>::basis(3).coeffs);
+        assert_eq!((e1 * e2).coeffs, Vga3f::basis(3).coeffs);
         // (3 e1 + 4 e2)² == 25 as f32
         let v = e1 * 3.0_f32 + e2 * 4.0_f32;
         assert_eq!((v * v).scalar_part(), 25.0_f32);
+        // and left-side scalar mul works too
+        let _ = Vga2f::basis(1);
     }
 
     #[test]
     fn f32_scalar_mul_both_sides() {
-        let v = Vga2::<f32>::basis(1);
+        use crate::Vga2f;
+        let v = Vga2f::basis(1);
         assert_eq!((2.0_f32 * v).coeffs, (v * 2.0_f32).coeffs);
     }
 }

@@ -26,15 +26,29 @@
 //!
 //! [`Multivector`] is parameterised by a coefficient type `T`
 //! implementing [`Scalar`] (and [`Real`] for the exponential). `f32`
-//! and `f64` are provided. Every algebra alias defaults to `f64`, so
-//! `Vga3` means `Vga3<f64>`, but you can write `Vga3<f32>` for graphics
-//! work or plug in your own scalar type.
+//! and `f64` are provided out of the box, and any ordered field — dual
+//! numbers for autodiff, fixed-point types — can opt in by implementing
+//! those traits.
+//!
+//! For ergonomics each algebra ships **two concrete aliases**: an `f64`
+//! one ([`Vga3`], [`Pga3`], …) and an `f32` one with an `f` suffix
+//! ([`Vga3f`], [`Pga3f`], …). Concrete aliases mean no turbofish is
+//! needed at call sites:
 //!
 //! ```
-//! use garust::Vga3;
-//! let v = Vga3::<f32>::basis(1) + Vga3::<f32>::basis(2);
-//! assert_eq!((v * v).scalar_part(), 2.0_f32);
+//! use garust::{Vga3, Vga3f};
+//!
+//! // f64 — the everyday default
+//! let v = Vga3::basis(1) + Vga3::basis(2);
+//! assert_eq!((v * v).scalar_part(), 2.0_f64);
+//!
+//! // f32 — for graphics / GPU work
+//! let w = Vga3f::basis(1) + Vga3f::basis(2);
+//! assert_eq!((w * w).scalar_part(), 2.0_f32);
 //! ```
+//!
+//! For a custom scalar type `S`, name the full generic form:
+//! `Multivector::<S, 3, 0, 0, 8>`.
 //!
 //! ## What's implemented
 //!
@@ -54,17 +68,24 @@ pub mod transform;
 pub use multivector::Multivector;
 pub use scalar::{Real, Scalar};
 
-/// 2D Euclidean Geometric Algebra `Cl(2, 0, 0)` — 4 basis blades.
-pub type Vga2<T = f64> = Multivector<T, 2, 0, 0, 4>;
+/// 2D Euclidean Geometric Algebra `Cl(2, 0, 0)` over `f64` — 4 blades.
+pub type Vga2 = Multivector<f64, 2, 0, 0, 4>;
+/// 3D Euclidean Geometric Algebra `Cl(3, 0, 0)` over `f64` — 8 blades.
+pub type Vga3 = Multivector<f64, 3, 0, 0, 8>;
+/// 3D Projective Geometric Algebra `Cl(3, 0, 1)` over `f64` — 16 blades.
+pub type Pga3 = Multivector<f64, 3, 0, 1, 16>;
+/// 3D Conformal Geometric Algebra `Cl(4, 1, 0)` over `f64` — 32 blades.
+pub type Cga3 = Multivector<f64, 4, 1, 0, 32>;
+/// Spacetime Algebra `Cl(1, 3, 0)` over `f64` — 16 blades, `(+, −, −, −)`.
+pub type Sta = Multivector<f64, 1, 3, 0, 16>;
 
-/// 3D Euclidean Geometric Algebra `Cl(3, 0, 0)` — 8 basis blades.
-pub type Vga3<T = f64> = Multivector<T, 3, 0, 0, 8>;
-
-/// 3D Projective Geometric Algebra `Cl(3, 0, 1)` — 16 basis blades.
-pub type Pga3<T = f64> = Multivector<T, 3, 0, 1, 16>;
-
-/// 3D Conformal Geometric Algebra `Cl(4, 1, 0)` — 32 basis blades.
-pub type Cga3<T = f64> = Multivector<T, 4, 1, 0, 32>;
-
-/// Spacetime Algebra `Cl(1, 3, 0)` — 16 basis blades, `(+, −, −, −)`.
-pub type Sta<T = f64> = Multivector<T, 1, 3, 0, 16>;
+/// 2D Euclidean Geometric Algebra `Cl(2, 0, 0)` over `f32` — 4 blades.
+pub type Vga2f = Multivector<f32, 2, 0, 0, 4>;
+/// 3D Euclidean Geometric Algebra `Cl(3, 0, 0)` over `f32` — 8 blades.
+pub type Vga3f = Multivector<f32, 3, 0, 0, 8>;
+/// 3D Projective Geometric Algebra `Cl(3, 0, 1)` over `f32` — 16 blades.
+pub type Pga3f = Multivector<f32, 3, 0, 1, 16>;
+/// 3D Conformal Geometric Algebra `Cl(4, 1, 0)` over `f32` — 32 blades.
+pub type Cga3f = Multivector<f32, 4, 1, 0, 32>;
+/// Spacetime Algebra `Cl(1, 3, 0)` over `f32` — 16 blades, `(+, −, −, −)`.
+pub type Staf = Multivector<f32, 1, 3, 0, 16>;
