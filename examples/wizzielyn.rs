@@ -1,5 +1,7 @@
 //! wizzielyn — round 4 brings the algebra to its punch-line uses:
 //! reflections, rotations, and the bivector-to-rotor bridge.
+//! Round 5 adds duality: the pseudoscalar, the complements, and the
+//! regressive product that *meets* subspaces where the wedge *joins*.
 
 use garust::{Vga2, Vga3};
 use std::f64::consts::FRAC_PI_2;
@@ -106,4 +108,30 @@ fn main() {
     let moved = motor.sandwich(&p010).cleaned(1e-10);
     println!("M · point(0,1,0) · ~M = {moved}");
     println!("                        (rotate (0,1,0) → (0,0,1), translate → (3,0,1))");
+
+    println!();
+    println!("== Round 5: duality — join with ∧, meet with ∨ ==");
+    // The pseudoscalar I is the top blade and the unit of the meet.
+    println!("I = pseudoscalar      = {}", Vga3::pseudoscalar());
+
+    // Wedge JOINS: two distinct points/directions span the plane between.
+    let ex = Vga3::basis(1);
+    let ey = Vga3::basis(2);
+    println!("e1 ∧ e2  (join)       = {}   (the xy-plane bivector)", ex.wedge(&ey));
+
+    // The complement is the metric-independent dual: rc(e1) = e23, the
+    // plane perpendicular to e1.
+    println!("rc(e1)                = {}   (plane ⟂ e1, no metric needed)", ex.right_complement());
+
+    // Regressive product MEETS: the xy-plane and xz-plane intersect in
+    // the x-axis.
+    let xy = Vga3::basis(3); // e12
+    let xz = Vga3::basis(5); // e13
+    println!("e12 ∨ e13  (meet)     = {}   (xy ∩ xz = the x-axis)", xy.regressive(&xz));
+    println!("e12 ∨ e23  (meet)     = {}   (xy ∩ yz = the y-axis)", xy.regressive(&Vga3::basis(6)));
+
+    // And the meet works unchanged in degenerate PGA, where the
+    // pseudoscalar is null and a metric dual would not exist.
+    let ip = Pga3::pseudoscalar();
+    println!("PGA I² (null!)        = {}   (so the meet can't use a metric dual)", (ip * ip).cleaned(1e-10));
 }

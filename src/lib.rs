@@ -57,7 +57,10 @@
 //! - the geometric product, plus wedge `∧`, inner `·`, scalar product
 //! - grade projection, reverse, grade involution, Clifford conjugation
 //! - versor inverse, the sandwich product, and a closed-form `exp`
+//! - the pseudoscalar, metric-independent complements, and the
+//!   regressive product `∨` (the *meet*, dual to the wedge's *join*)
 
+pub mod dual;
 pub mod involutions;
 pub mod multivector;
 pub mod products;
