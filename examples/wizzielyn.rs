@@ -2,6 +2,8 @@
 //! reflections, rotations, and the bivector-to-rotor bridge.
 //! Round 5 adds duality: the pseudoscalar, the complements, and the
 //! regressive product that *meets* subspaces where the wedge *joins*.
+//! Round 6 cashes that out as PGA geometry: points, planes, and the
+//! lines that meet and join them.
 
 use garust::{Vga2, Vga3};
 use std::f64::consts::FRAC_PI_2;
@@ -134,4 +136,31 @@ fn main() {
     // pseudoscalar is null and a metric dual would not exist.
     let ip = Pga3::pseudoscalar();
     println!("PGA I² (null!)        = {}   (so the meet can't use a metric dual)", (ip * ip).cleaned(1e-10));
+
+    println!();
+    println!("== Round 6: PGA geometry — points, planes, lines ==");
+    // A point (grade-3 trivector) and a plane (grade-1 vector).
+    println!("point(1,2,3)          = {}", Pga3::point(1.0, 2.0, 3.0));
+    println!("plane x=1  (x-1=0)    = {}", Pga3::plane(1.0, 0.0, 0.0, -1.0));
+
+    // Three planes MEET (wedge) at their common point.
+    let px = Pga3::plane(1.0, 0.0, 0.0, -1.0); // x = 1
+    let py = Pga3::plane(0.0, 1.0, 0.0, -2.0); // y = 2
+    let pz = Pga3::plane(0.0, 0.0, 1.0, -3.0); // z = 3
+    let meet = px.wedge(&py).wedge(&pz);
+    println!("(x=1) ∧ (y=2) ∧ (z=3) = {meet}");
+    println!("                        (= point(1,2,3), the three planes' intersection)");
+
+    // Two points JOIN (regressive) into the line through them.
+    let a = Pga3::point(0.0, 0.0, 0.0);
+    let b = Pga3::point(1.0, 0.0, 0.0);
+    let line = a.line_through(&b);
+    println!("point(0,0,0) ∨ (1,0,0)= {line}   (the x-axis line)");
+
+    // Collinearity is an incidence test: a third point on that line
+    // makes the triple join vanish.
+    let c = Pga3::point(2.0, 0.0, 0.0);
+    let off = Pga3::point(0.0, 1.0, 0.0);
+    println!("join of 3 collinear   = {}   (all on the x-axis ⇒ 0)", line.regressive(&c).cleaned(1e-10));
+    println!("join of 3 non-collinear = {}", line.regressive(&off).cleaned(1e-10));
 }

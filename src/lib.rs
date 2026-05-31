@@ -59,10 +59,13 @@
 //! - versor inverse, the sandwich product, and a closed-form `exp`
 //! - the pseudoscalar, metric-independent complements, and the
 //!   regressive product `∨` (the *meet*, dual to the wedge's *join*)
+//! - PGA geometric constructors for `Cl(3,0,1)`: `point`, `plane`,
+//!   `line_through`, with meet/join doing real incidence geometry
 
 pub mod dual;
 pub mod involutions;
 pub mod multivector;
+pub mod pga;
 pub mod products;
 pub mod scalar;
 pub mod signature;

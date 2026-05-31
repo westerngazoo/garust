@@ -1,0 +1,168 @@
+//! 3D Projective Geometric Algebra constructors, for `Pga3 = Cl(3, 0, 1)`.
+//!
+//! Round 5 gave us the wedge (`∧`, *join*) and the regressive product
+//! (`∨`, *meet*). This module turns those abstract operations into
+//! honest geometry by naming the blades you actually care about —
+//! points, planes, and the lines between them — in the one signature
+//! where they have a Euclidean interpretation.
+//!
+//! # Conventions (this crate's `Pga3`)
+//!
+//! Four generators, with the null one at bit 3 (printed `e4`, called
+//! `e0` in the PGA literature):
+//!
+//! - `e1, e2, e3` square to `+1` — the Euclidean directions
+//! - `e0` squares to `0` — the projective / ideal direction
+//!
+//! Grade carries the geometric meaning, dual to the usual vector view:
+//!
+//! | object | grade | blade form |
+//! |--------|-------|------------|
+//! | plane  | 1     | `a·e1 + b·e2 + c·e3 + d·e0` for `ax+by+cz+d = 0` |
+//! | line   | 2     | join of two points / meet of two planes |
+//! | point  | 3     | `e1e2e3 − x·e0e2e3 + y·e0e1e3 − z·e0e1e2` for `(x,y,z)` |
+//!
+//! With these conventions the two products do exactly what their names
+//! promise: the **wedge of two planes is their intersection line**, the
+//! **wedge of three planes is their common point**, and the
+//! **regressive product of two points is the line through them**.
+
+use crate::multivector::Multivector;
+use crate::scalar::Scalar;
+
+/// PGA constructors are defined only for the `Cl(3, 0, 1)` signature, so
+/// this `impl` is pinned to those exact const parameters. It covers both
+/// `Pga3` (`f64`) and `Pga3f` (`f32`).
+impl<T: Scalar> Multivector<T, 3, 0, 1, 16> {
+    /// A Euclidean point at `(x, y, z)`, as a grade-3 trivector.
+    ///
+    /// ```
+    /// use garust::Pga3;
+    /// let p = Pga3::point(1.0, 2.0, 3.0);
+    /// assert_eq!(p.grade(3).coeffs, p.coeffs); // pure trivector
+    /// ```
+    pub fn point(x: T, y: T, z: T) -> Self {
+        let e0 = Self::basis(8);
+        let e1 = Self::basis(1);
+        let e2 = Self::basis(2);
+        let e3 = Self::basis(4);
+        e1 * e2 * e3 - (e0 * e2 * e3) * x + (e0 * e1 * e3) * y - (e0 * e1 * e2) * z
+    }
+
+    /// The plane `a·x + b·y + c·z + d = 0`, as a grade-1 vector.
+    ///
+    /// The `(a, b, c)` part is the (unnormalized) normal direction and
+    /// `d` the offset along the null generator `e0`.
+    pub fn plane(a: T, b: T, c: T, d: T) -> Self {
+        let e0 = Self::basis(8);
+        let e1 = Self::basis(1);
+        let e2 = Self::basis(2);
+        let e3 = Self::basis(4);
+        e1 * a + e2 * b + e3 * c + e0 * d
+    }
+
+    /// The line through two points — their *join*, i.e. the regressive
+    /// product `p ∨ q`. A grade-2 bivector.
+    ///
+    /// Antisymmetric: `line_through(p, q) == −line_through(q, p)`. Three
+    /// collinear points join to zero, which is the incidence test for
+    /// "do these points lie on a common line?".
+    pub fn line_through(&self, other: &Self) -> Self {
+        self.regressive(other)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::Pga3;
+
+    // --- Grades ---------------------------------------------------------
+
+    #[test]
+    fn point_is_a_pure_trivector() {
+        let p = Pga3::point(1.0, -2.0, 3.5);
+        assert_eq!(p.grade(3).coeffs, p.coeffs);
+        // The e1e2e3 component is always 1 (the homogeneous weight).
+        assert_eq!(p.coeffs[0b0111], 1.0);
+    }
+
+    #[test]
+    fn plane_is_a_pure_vector() {
+        let pi = Pga3::plane(1.0, 2.0, 3.0, 4.0);
+        assert_eq!(pi.grade(1).coeffs, pi.coeffs);
+        // a,b,c land on e1,e2,e3 ; d lands on the null generator e0.
+        assert_eq!(pi.coeffs[0b0001], 1.0);
+        assert_eq!(pi.coeffs[0b0010], 2.0);
+        assert_eq!(pi.coeffs[0b0100], 3.0);
+        assert_eq!(pi.coeffs[0b1000], 4.0);
+    }
+
+    // --- Meet of planes -------------------------------------------------
+
+    #[test]
+    fn three_coordinate_planes_meet_at_the_origin() {
+        // x=0, y=0, z=0 intersect at the origin point.
+        let xy0 = Pga3::plane(1.0, 0.0, 0.0, 0.0);
+        let yz0 = Pga3::plane(0.0, 1.0, 0.0, 0.0);
+        let zx0 = Pga3::plane(0.0, 0.0, 1.0, 0.0);
+        let meet = xy0.wedge(&yz0).wedge(&zx0);
+        assert_eq!(meet.coeffs, Pga3::point(0.0, 0.0, 0.0).coeffs);
+    }
+
+    #[test]
+    fn three_planes_meet_at_their_common_point() {
+        // x=1, y=2, z=3  ⇒  meet at exactly (1, 2, 3), no tolerance.
+        let px = Pga3::plane(1.0, 0.0, 0.0, -1.0);
+        let py = Pga3::plane(0.0, 1.0, 0.0, -2.0);
+        let pz = Pga3::plane(0.0, 0.0, 1.0, -3.0);
+        let meet = px.wedge(&py).wedge(&pz);
+        assert_eq!(meet.coeffs, Pga3::point(1.0, 2.0, 3.0).coeffs);
+    }
+
+    #[test]
+    fn two_planes_meet_in_a_grade_2_line() {
+        let px = Pga3::plane(1.0, 0.0, 0.0, 0.0);
+        let py = Pga3::plane(0.0, 1.0, 0.0, 0.0);
+        let line = px.wedge(&py);
+        assert_eq!(line.grade(2).coeffs, line.coeffs);
+        assert_ne!(line.coeffs, Pga3::zero().coeffs);
+    }
+
+    // --- Join of points -------------------------------------------------
+
+    #[test]
+    fn line_through_two_points_is_a_bivector() {
+        let line = Pga3::line_through(&Pga3::point(0.0, 0.0, 0.0), &Pga3::point(1.0, 0.0, 0.0));
+        assert_eq!(line.grade(2).coeffs, line.coeffs);
+        assert_ne!(line.coeffs, Pga3::zero().coeffs);
+    }
+
+    #[test]
+    fn line_through_is_antisymmetric() {
+        let p = Pga3::point(1.0, 2.0, 3.0);
+        let q = Pga3::point(-4.0, 5.0, 0.5);
+        let pq = Pga3::line_through(&p, &q);
+        let qp = Pga3::line_through(&q, &p);
+        assert_eq!(pq.coeffs, (-qp).coeffs);
+    }
+
+    #[test]
+    fn three_collinear_points_join_to_zero() {
+        // (0,0,0), (1,0,0), (2,0,0) all lie on the x-axis, so their
+        // triple join (the plane they would span) vanishes.
+        let a = Pga3::point(0.0, 0.0, 0.0);
+        let b = Pga3::point(1.0, 0.0, 0.0);
+        let c = Pga3::point(2.0, 0.0, 0.0);
+        let join3 = a.line_through(&b).regressive(&c);
+        assert_eq!(join3.cleaned(1e-10).coeffs, Pga3::zero().coeffs);
+    }
+
+    #[test]
+    fn three_non_collinear_points_have_a_nonzero_join() {
+        let a = Pga3::point(0.0, 0.0, 0.0);
+        let b = Pga3::point(1.0, 0.0, 0.0);
+        let c = Pga3::point(0.0, 1.0, 0.0);
+        let join3 = a.line_through(&b).regressive(&c);
+        assert_ne!(join3.cleaned(1e-10).coeffs, Pga3::zero().coeffs);
+    }
+}
