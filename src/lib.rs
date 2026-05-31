@@ -61,9 +61,12 @@
 //!   regressive product `∨` (the *meet*, dual to the wedge's *join*)
 //! - PGA geometric constructors for `Cl(3,0,1)`: `point`, `plane`,
 //!   `line_through`, with meet/join doing real incidence geometry
+//! - [`Motor`] — rigid-body motions in PGA (rotors, translators, and
+//!   their screw-motion compositions)
 
 pub mod dual;
 pub mod involutions;
+pub mod motor;
 pub mod multivector;
 pub mod pga;
 pub mod products;
@@ -71,6 +74,7 @@ pub mod scalar;
 pub mod signature;
 pub mod transform;
 
+pub use motor::Motor;
 pub use multivector::Multivector;
 pub use scalar::{Real, Scalar};
 
@@ -95,3 +99,8 @@ pub type Pga3f = Multivector<f32, 3, 0, 1, 16>;
 pub type Cga3f = Multivector<f32, 4, 1, 0, 32>;
 /// Spacetime Algebra `Cl(1, 3, 0)` over `f32` — 16 blades, `(+, −, −, −)`.
 pub type Staf = Multivector<f32, 1, 3, 0, 16>;
+
+/// A rigid-body [`Motor`] in 3D PGA over `f64`.
+pub type Motor3 = Motor<f64>;
+/// A rigid-body [`Motor`] in 3D PGA over `f32`.
+pub type Motor3f = Motor<f32>;

@@ -4,6 +4,8 @@
 //! regressive product that *meets* subspaces where the wedge *joins*.
 //! Round 6 cashes that out as PGA geometry: points, planes, and the
 //! lines that meet and join them.
+//! Round 7 wraps rigid motions in a Motor type — rotors and translators
+//! composed with `*` and applied with one call.
 
 use garust::{Vga2, Vga3};
 use std::f64::consts::FRAC_PI_2;
@@ -163,4 +165,22 @@ fn main() {
     let off = Pga3::point(0.0, 1.0, 0.0);
     println!("join of 3 collinear   = {}   (all on the x-axis ⇒ 0)", line.regressive(&c).cleaned(1e-10));
     println!("join of 3 non-collinear = {}", line.regressive(&off).cleaned(1e-10));
+
+    println!();
+    println!("== Round 7: Motors — rigid motions with a clean API ==");
+    use garust::Motor3;
+    // Rotate 90° about the x-axis (e23 plane), then translate +3 in x.
+    let r = Motor3::rotor(FRAC_PI_2, Pga3::basis(0b0110));
+    let t = Motor3::translator(3.0, 0.0, 0.0);
+    let m = t * r; // compose: `*` applies r first, then t
+    println!("|M|²                  = {}   (a motor is a unit versor)", m.norm_squared());
+
+    // Apply the screw motion to the point (0, 1, 0).
+    let moved = m.apply(&Pga3::point(0.0, 1.0, 0.0)).cleaned(1e-10);
+    println!("M · point(0,1,0)      = {moved}");
+    println!("                        (rotate (0,1,0)→(0,0,1), translate → (3,0,1))");
+
+    // The inverse undoes the motion exactly.
+    let back = m.inverse().apply(&moved).cleaned(1e-10);
+    println!("M⁻¹ · (that)          = {back}   (back to point(0,1,0))");
 }
