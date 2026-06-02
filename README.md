@@ -1,5 +1,7 @@
 # garust
 
+[![CI](https://github.com/westerngazoo/garust/actions/workflows/ci.yml/badge.svg)](https://github.com/westerngazoo/garust/actions/workflows/ci.yml)
+
 **Geometric Algebra in Rust — generic over the Clifford signature `Cl(P, Q, R)` and the scalar type.**
 
 A from-scratch, **zero-dependency** implementation of Geometric Algebra
