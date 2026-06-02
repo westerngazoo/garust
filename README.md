@@ -99,6 +99,28 @@ let moved = m.apply(&Pga3::point(0.0, 1.0, 0.0)); // → point(3, 0, 1)
 let back  = m.inverse().apply(&moved);            // → point(0, 1, 0)
 ```
 
+### Conformal transforms: CGA adds scaling
+
+Where a `Motor` covers rigid motions, a `Conformal` versor in CGA
+`Cl(4,1,0)` also gives you uniform **scaling** about the origin — and
+it acts on spheres and planes just as readily as on points.
+
+```rust
+use garust::{Cga3, Conformal3};
+
+let scale = Conformal3::dilator(2.0);          // ×2 about the origin
+let shift = Conformal3::translator(1.0, 0.0, 0.0);
+
+// Order matters, just like matrices:
+let p = Cga3::cga_point(1.0, 0.0, 0.0);
+let a = (shift * scale).apply(&p).to_euclidean(); // ×2 then +1 → (3,0,0)
+let b = (scale * shift).apply(&p).to_euclidean(); // +1 then ×2 → (4,0,0)
+
+// A dilation grows the whole sphere, not just a point:
+let unit = Cga3::sphere(0.0, 0.0, 0.0, 1.0);
+let big  = scale.apply(&unit);                    // now radius 2
+```
+
 ## What's implemented
 
 - `Multivector<T, P, Q, R, DIM>` — a dense `[T; 2^N]` element, generic
@@ -115,6 +137,9 @@ let back  = m.inverse().apply(&moved);            // → point(0, 1, 0)
   complements, and the **regressive product** `∨` (the *meet*)
 - **PGA constructors** for `Cl(3,0,1)`: `point`, `plane`, `line_through`
 - **`Motor`** — rotors, translators, and their screw-motion compositions
+- **CGA constructors** for `Cl(4,1,0)`: `cga_point`, `sphere`, `cga_plane`
+- **`Conformal`** — translators, rotors, and origin dilations on the
+  conformal model
 
 ## Generic over the scalar type
 

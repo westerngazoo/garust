@@ -66,8 +66,11 @@
 //!   their screw-motion compositions)
 //! - CGA geometric constructors for `Cl(4,1,0)`: `cga_point`, `sphere`,
 //!   `cga_plane`, on the null-cone conformal model
+//! - [`Conformal`] — conformal transformations in CGA (translators,
+//!   rotors, and dilations about the origin)
 
 pub mod cga;
+pub mod conformal;
 pub mod dual;
 pub mod involutions;
 pub mod motor;
@@ -78,6 +81,7 @@ pub mod scalar;
 pub mod signature;
 pub mod transform;
 
+pub use conformal::Conformal;
 pub use motor::Motor;
 pub use multivector::Multivector;
 pub use scalar::{Real, Scalar};
@@ -108,3 +112,8 @@ pub type Staf = Multivector<f32, 1, 3, 0, 16>;
 pub type Motor3 = Motor<f64>;
 /// A rigid-body [`Motor`] in 3D PGA over `f32`.
 pub type Motor3f = Motor<f32>;
+
+/// A [`Conformal`] transformation in 3D CGA over `f64`.
+pub type Conformal3 = Conformal<f64>;
+/// A [`Conformal`] transformation in 3D CGA over `f32`.
+pub type Conformal3f = Conformal<f32>;

@@ -243,4 +243,27 @@ fn main() {
     // The inverse undoes the motion exactly.
     let back = m.inverse().apply(&moved).cleaned(1e-10);
     println!("M⁻¹ · (that)          = {back}   (back to point(0,1,0))");
+
+    println!();
+    println!("== Round 8: Conformal transforms — CGA adds scaling ==");
+    use garust::{Cga3, Conformal3};
+    // Translators and rotors behave like a motor, but CGA also has a
+    // *dilator* — a uniform scaling about the origin — which no rigid
+    // motion can express.
+    let scale = Conformal3::dilator(2.0);
+    let shift = Conformal3::translator(1.0, 0.0, 0.0);
+
+    // Order matters: scale-then-shift ≠ shift-then-scale.
+    let p = Cga3::cga_point(1.0, 0.0, 0.0);
+    let st = (shift * scale).apply(&p); // ×2 then +1  ⇒ (3,0,0)
+    let ts = (scale * shift).apply(&p); // +1 then ×2  ⇒ (4,0,0)
+    println!("scale-then-shift (1,0,0) = {:?}", st.to_euclidean());
+    println!("shift-then-scale (1,0,0) = {:?}", ts.to_euclidean());
+
+    // A dilation grows a sphere: the unit sphere at the origin becomes
+    // radius 2, so the point (2,0,0) now lies on it.
+    let unit_sphere = Cga3::sphere(0.0, 0.0, 0.0, 1.0);
+    let grown = scale.apply(&unit_sphere);
+    let on = Cga3::cga_point(2.0, 0.0, 0.0).scalar_product(&grown);
+    println!("(2,0,0) · scaled sphere  = {on:.3}   (≈0 ⇒ on the radius-2 sphere)");
 }

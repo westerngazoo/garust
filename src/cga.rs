@@ -98,6 +98,17 @@ impl<T: Scalar> Multivector<T, 4, 1, 0, 32> {
         let e3 = Self::basis(4);
         e1 * a + e2 * b + e3 * c + Self::n_infinity() * d
     }
+
+    /// Read the Euclidean coordinates back out of a conformal point.
+    ///
+    /// A point may carry an arbitrary positive *weight* `w` (a conformal
+    /// dilation, for instance, rescales it), so we divide through by
+    /// `w = −P · n∞` before reading the `e1, e2, e3` coordinates. The
+    /// inverse of [`Multivector::cga_point`] up to that homogeneity.
+    pub fn to_euclidean(&self) -> (T, T, T) {
+        let w = -self.scalar_product(&Self::n_infinity());
+        (self.coeffs[1] / w, self.coeffs[2] / w, self.coeffs[4] / w)
+    }
 }
 
 #[cfg(test)]
