@@ -162,7 +162,9 @@ mod tests {
     #[test]
     fn norm_is_the_euclidean_length_of_a_vector() {
         // v = 3 e1 + 4 e2 ⇒ |v| = 5.
-        let v = Vga2 { coeffs: [0.0, 3.0, 4.0, 0.0] };
+        let v = Vga2 {
+            coeffs: [0.0, 3.0, 4.0, 0.0],
+        };
         assert!((v.norm() - 5.0).abs() < 1e-12);
     }
 
@@ -179,7 +181,9 @@ mod tests {
 
     #[test]
     fn normalized_has_unit_norm() {
-        let v = Vga3 { coeffs: [0.0, 1.0, 2.0, 0.0, -2.0, 0.0, 0.0, 0.0] };
+        let v = Vga3 {
+            coeffs: [0.0, 1.0, 2.0, 0.0, -2.0, 0.0, 0.0, 0.0],
+        };
         let u = v.normalized();
         assert!((u.norm() - 1.0).abs() < 1e-12);
         // Direction is preserved: u is a positive multiple of v.

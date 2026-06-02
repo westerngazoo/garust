@@ -64,7 +64,10 @@
 //!   `line_through`, with meet/join doing real incidence geometry
 //! - [`Motor`] — rigid-body motions in PGA (rotors, translators, and
 //!   their screw-motion compositions)
+//! - CGA geometric constructors for `Cl(4,1,0)`: `cga_point`, `sphere`,
+//!   `cga_plane`, on the null-cone conformal model
 
+pub mod cga;
 pub mod dual;
 pub mod involutions;
 pub mod motor;
