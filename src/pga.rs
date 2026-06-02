@@ -27,6 +27,8 @@
 //! **wedge of three planes is their common point**, and the
 //! **regressive product of two points is the line through them**.
 
+use core::fmt;
+
 use crate::multivector::Multivector;
 use crate::scalar::Scalar;
 
@@ -69,6 +71,92 @@ impl<T: Scalar> Multivector<T, 3, 0, 1, 16> {
     /// "do these points lie on a common line?".
     pub fn line_through(&self, other: &Self) -> Self {
         self.regressive(other)
+    }
+
+    /// A PGA-aware [`fmt::Display`] view that prints the null generator
+    /// as `e0`, written *first* in each blade, matching the PGA
+    /// literature.
+    ///
+    /// The crate's generic `Display` labels bit `k` as `e{k+1}`, so the
+    /// null generator at bit 3 prints as the misleading `e4`. This
+    /// wrapper relabels it `e0` and moves it to the front of every blade.
+    /// Reordering `e0` past the `m` Euclidean generators ahead of it
+    /// costs a sign `(-1)^m`, which is folded into the printed
+    /// coefficient — so `basis(9)` (stored as `e1∧e0`) prints as `-e01`.
+    ///
+    /// ```
+    /// use garust::Pga3;
+    /// let p = Pga3::point(1.0, 2.0, 3.0);
+    /// assert_eq!(p.display_pga().to_string(), "e123 - 3·e012 + 2·e013 - e023");
+    /// ```
+    pub fn display_pga(&self) -> PgaDisplay<T> {
+        PgaDisplay { mv: *self }
+    }
+}
+
+/// A `Display` adapter for `Pga3` multivectors that names the null
+/// generator `e0` and writes it first in each blade. Build one with
+/// [`Multivector::display_pga`].
+pub struct PgaDisplay<T: Scalar> {
+    mv: Multivector<T, 3, 0, 1, 16>,
+}
+
+impl<T: Scalar> fmt::Display for PgaDisplay<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut first = true;
+        for i in 0..16 {
+            let raw = self.mv.coeffs[i];
+            if raw == T::ZERO {
+                continue;
+            }
+            let has_e0 = i & 0b1000 != 0;
+            let others = i & 0b0111;
+            // Reordering e0 to the front past the Euclidean generators
+            // already in the blade flips the sign once per crossing.
+            let reorder_neg = has_e0 && (others.count_ones() & 1 == 1);
+            let c = if reorder_neg { -raw } else { raw };
+
+            // Sign / separator.
+            let negative = c < T::ZERO;
+            if first {
+                if negative {
+                    write!(f, "-")?;
+                }
+                first = false;
+            } else if negative {
+                write!(f, " - ")?;
+            } else {
+                write!(f, " + ")?;
+            }
+            let mag = if negative { -c } else { c };
+
+            // Suppress the magnitude when it's exactly 1 (a bare blade),
+            // unless this is the scalar term where the number is all there is.
+            let is_scalar = i == 0;
+            if is_scalar || mag != T::ONE {
+                write!(f, "{mag}")?;
+                if !is_scalar {
+                    write!(f, "·")?;
+                }
+            }
+            if is_scalar {
+                continue;
+            }
+
+            write!(f, "e")?;
+            if has_e0 {
+                write!(f, "0")?;
+            }
+            for bit in 0..3 {
+                if others & (1 << bit) != 0 {
+                    write!(f, "{}", bit + 1)?;
+                }
+            }
+        }
+        if first {
+            write!(f, "0")?;
+        }
+        Ok(())
     }
 }
 
@@ -164,5 +252,41 @@ mod tests {
         let c = Pga3::point(0.0, 1.0, 0.0);
         let join3 = a.line_through(&b).regressive(&c);
         assert_ne!(join3.cleaned(1e-10).coeffs, Pga3::zero().coeffs);
+    }
+
+    // --- PGA-aware display ----------------------------------------------
+
+    #[test]
+    fn display_names_the_null_generator_e0() {
+        // basis(8) is the null generator, printed e0 (not the generic e4).
+        assert_eq!(Pga3::basis(8).display_pga().to_string(), "e0");
+    }
+
+    #[test]
+    fn display_folds_the_reorder_sign_into_the_coefficient() {
+        // basis(9) is stored as e1∧e0; written e0-first it is −e01.
+        assert_eq!(Pga3::basis(9).display_pga().to_string(), "-e01");
+    }
+
+    #[test]
+    fn display_of_a_point_writes_e0_first_in_every_blade() {
+        let p = Pga3::point(1.0, 2.0, 3.0);
+        assert_eq!(p.display_pga().to_string(), "e123 - 3·e012 + 2·e013 - e023");
+    }
+
+    #[test]
+    fn display_of_the_pseudoscalar_carries_its_reorder_sign() {
+        // I = e0123 with the e0-first reorder sign for three crossings.
+        assert_eq!(Pga3::pseudoscalar().display_pga().to_string(), "-e0123");
+    }
+
+    #[test]
+    fn display_of_zero_is_zero() {
+        assert_eq!(Pga3::zero().display_pga().to_string(), "0");
+    }
+
+    #[test]
+    fn display_shows_the_scalar_term() {
+        assert_eq!(Pga3::one().display_pga().to_string(), "1");
     }
 }

@@ -136,7 +136,9 @@ mod tests {
 
     #[test]
     fn vector_times_its_inverse_is_one() {
-        let v = Vga2 { coeffs: [0.0, 3.0, 4.0, 0.0] };
+        let v = Vga2 {
+            coeffs: [0.0, 3.0, 4.0, 0.0],
+        };
         let inv = v.versor_inverse();
         let prod = v * inv;
         approx_eq(&prod.coeffs, &Vga2::one().coeffs, 1e-12);

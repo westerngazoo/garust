@@ -44,7 +44,9 @@ impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize
         // The explicit unit pattern keeps both clippy::let_unit_value
         // and the path_statements lint happy.
         let () = Self::_DIM_CHECK;
-        Self { coeffs: [T::ZERO; DIM] }
+        Self {
+            coeffs: [T::ZERO; DIM],
+        }
     }
 
     /// A pure scalar `s + 0·e1 + 0·e2 + …`.
@@ -250,7 +252,8 @@ impl_left_scalar_mul!(f64);
 // Blade labels are generated mechanically from the bit-mask index:
 // bit `k` → `e_{k+1}`. This is signature-agnostic, so in PGA `Cl(3,0,1)`
 // the null generator prints as `e4` rather than the conventional `e0`.
-// We'll fix that when we add per-algebra wrapper types.
+// For PGA-conventional output (null generator named `e0`, written first
+// in each blade) use [`Multivector::display_pga`].
 
 impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize> fmt::Display
     for Multivector<T, P, Q, R, DIM>
@@ -334,22 +337,32 @@ mod tests {
     #[test]
     fn addition_is_componentwise() {
         // a = 1 + 2 e1 + 3 e12
-        let a = Vga2 { coeffs: [1.0, 2.0, 0.0, 3.0] };
+        let a = Vga2 {
+            coeffs: [1.0, 2.0, 0.0, 3.0],
+        };
         // b = 10 + 20 e2
-        let b = Vga2 { coeffs: [10.0, 0.0, 20.0, 0.0] };
+        let b = Vga2 {
+            coeffs: [10.0, 0.0, 20.0, 0.0],
+        };
         assert_eq!((a + b).coeffs, [11.0, 2.0, 20.0, 3.0]);
     }
 
     #[test]
     fn subtraction_is_componentwise() {
-        let a = Vga3 { coeffs: [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0] };
-        let b = Vga3 { coeffs: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0] };
+        let a = Vga3 {
+            coeffs: [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+        };
+        let b = Vga3 {
+            coeffs: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+        };
         assert_eq!((a - b).coeffs, [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]);
     }
 
     #[test]
     fn neg_flips_every_coefficient() {
-        let a = Vga2 { coeffs: [1.0, 2.0, -3.0, 4.0] };
+        let a = Vga2 {
+            coeffs: [1.0, 2.0, -3.0, 4.0],
+        };
         assert_eq!((-a).coeffs, [-1.0, -2.0, 3.0, -4.0]);
     }
 
@@ -414,9 +427,15 @@ mod tests {
     #[test]
     fn geometric_product_is_left_distributive() {
         // a * (b + c) == a*b + a*c, exercised on a non-trivial pair.
-        let a = Vga3 { coeffs: [1.0, 2.0, 0.0, -1.0, 0.0, 3.0, 0.0, 0.0] };
-        let b = Vga3 { coeffs: [0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 2.0] };
-        let c = Vga3 { coeffs: [2.0, 0.0, 0.0, 1.0, -1.0, 0.0, 1.0, 0.0] };
+        let a = Vga3 {
+            coeffs: [1.0, 2.0, 0.0, -1.0, 0.0, 3.0, 0.0, 0.0],
+        };
+        let b = Vga3 {
+            coeffs: [0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 2.0],
+        };
+        let c = Vga3 {
+            coeffs: [2.0, 0.0, 0.0, 1.0, -1.0, 0.0, 1.0, 0.0],
+        };
         let lhs = a * (b + c);
         let rhs = (a * b) + (a * c);
         assert_eq!(lhs.coeffs, rhs.coeffs);
@@ -432,7 +451,9 @@ mod tests {
 
     #[test]
     fn scalar_mul_left_matches_right() {
-        let v = Vga2 { coeffs: [1.0, -2.0, 0.5, 4.0] };
+        let v = Vga2 {
+            coeffs: [1.0, -2.0, 0.5, 4.0],
+        };
         assert_eq!((2.5 * v).coeffs, (v * 2.5).coeffs);
     }
 
@@ -457,13 +478,17 @@ mod tests {
     #[test]
     fn display_mixed_grade_with_signs() {
         // 2 + 3·e1 - e2 + e12
-        let m = Vga2 { coeffs: [2.0, 3.0, -1.0, 1.0] };
+        let m = Vga2 {
+            coeffs: [2.0, 3.0, -1.0, 1.0],
+        };
         assert_eq!(format!("{m}"), "2 + 3·e1 - e2 + e12");
     }
 
     #[test]
     fn display_starts_with_minus_when_first_term_negative() {
-        let m = Vga2 { coeffs: [0.0, -2.0, 0.0, 1.0] };
+        let m = Vga2 {
+            coeffs: [0.0, -2.0, 0.0, 1.0],
+        };
         assert_eq!(format!("{m}"), "-2·e1 + e12");
     }
 
@@ -471,19 +496,25 @@ mod tests {
 
     #[test]
     fn cleaned_zeros_subthreshold_coefficients() {
-        let m = Vga2 { coeffs: [1e-15, 1.0, -1e-13, 2.0] };
+        let m = Vga2 {
+            coeffs: [1e-15, 1.0, -1e-13, 2.0],
+        };
         assert_eq!(m.cleaned(1e-12).coeffs, [0.0, 1.0, 0.0, 2.0]);
     }
 
     #[test]
     fn cleaned_preserves_significant_coefficients() {
-        let m = Vga2 { coeffs: [0.5, -0.3, 0.1, 1e-5] };
+        let m = Vga2 {
+            coeffs: [0.5, -0.3, 0.1, 1e-5],
+        };
         assert_eq!(m.cleaned(1e-12).coeffs, m.coeffs);
     }
 
     #[test]
     fn cleaned_at_zero_tolerance_is_identity() {
-        let m = Vga2 { coeffs: [1e-300, 1.0, -2.0, 0.0] };
+        let m = Vga2 {
+            coeffs: [1e-300, 1.0, -2.0, 0.0],
+        };
         assert_eq!(m.cleaned(0.0).coeffs, m.coeffs);
     }
 

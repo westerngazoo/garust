@@ -151,7 +151,9 @@ mod tests {
     #[test]
     fn grade_projection_isolates_each_grade() {
         // m = 1 + 2·e1 + 3·e2 + 4·e12 in Vga2
-        let m = Vga2 { coeffs: [1.0, 2.0, 3.0, 4.0] };
+        let m = Vga2 {
+            coeffs: [1.0, 2.0, 3.0, 4.0],
+        };
         assert_eq!(m.grade(0).coeffs, [1.0, 0.0, 0.0, 0.0]);
         assert_eq!(m.grade(1).coeffs, [0.0, 2.0, 3.0, 0.0]);
         assert_eq!(m.grade(2).coeffs, [0.0, 0.0, 0.0, 4.0]);
@@ -159,7 +161,9 @@ mod tests {
 
     #[test]
     fn grades_sum_to_original() {
-        let m = Vga3 { coeffs: [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0] };
+        let m = Vga3 {
+            coeffs: [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+        };
         let recon = m.grade(0) + m.grade(1) + m.grade(2) + m.grade(3);
         assert_eq!(recon.coeffs, m.coeffs);
     }
@@ -213,8 +217,12 @@ mod tests {
     #[test]
     fn vectors_geometric_product_equals_inner_plus_wedge() {
         // a = 2 e1 + 3 e2 - e3,  b = -e1 + 4 e2 + 2 e3
-        let a = Vga3 { coeffs: [0.0, 2.0, 3.0, 0.0, -1.0, 0.0, 0.0, 0.0] };
-        let b = Vga3 { coeffs: [0.0, -1.0, 4.0, 0.0, 2.0, 0.0, 0.0, 0.0] };
+        let a = Vga3 {
+            coeffs: [0.0, 2.0, 3.0, 0.0, -1.0, 0.0, 0.0, 0.0],
+        };
+        let b = Vga3 {
+            coeffs: [0.0, -1.0, 4.0, 0.0, 2.0, 0.0, 0.0, 0.0],
+        };
         let lhs = a * b;
         let rhs = a.inner(&b) + a.wedge(&b);
         assert_eq!(lhs.coeffs, rhs.coeffs);
