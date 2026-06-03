@@ -28,17 +28,17 @@
 //!   const-assert is gone because the bug it guarded is now unrepresentable.
 //! - **Named, self-documenting signatures.** `Multivector<Pga3Sig, f64>`
 //!   reads better than `Multivector<f64, 3, 0, 1, 16>`, and downstream
-//!   crates can mint their own signatures with [`define_algebra!`].
+//!   crates can mint their own signatures with [`define_algebra!`](crate::define_algebra).
 //! - **A single place to hang signature-level data** (the metric, later a
 //!   cached Cayley table, …) as more associated items.
 //!
 //! # Defining your own algebra
 //!
-//! Use [`define_algebra!`] — it generates the marker type and its
+//! Use [`define_algebra!`](crate::define_algebra) — it generates the marker type and its
 //! [`Algebra`] impl from the three signature integers:
 //!
 //! ```
-//! use garust::{define_algebra, Multivector};
+//! use garust_core::{define_algebra, Multivector};
 //!
 //! define_algebra!(
 //!     /// 2D Euclidean plane, `Cl(2, 0, 0)`.
@@ -103,7 +103,7 @@ impl<T: Copy, const D: usize> BladeStore<T> for [T; D] {
 /// [`N`](Algebra::N) and [`DIM`](Algebra::DIM) and the
 /// [`Blades`](Algebra::Blades) storage type all follow from them.
 ///
-/// Prefer [`define_algebra!`] over a hand-written impl — it fills in the
+/// Prefer [`define_algebra!`](crate::define_algebra) over a hand-written impl — it fills in the
 /// associated type with the correct `[T; 2^N]` length and derives the
 /// marker's `Copy`/`Debug`/… for you.
 ///
@@ -141,7 +141,7 @@ pub trait Algebra: Copy + Debug {
 /// visibility qualifier are passed through to the generated struct.
 ///
 /// ```
-/// use garust::{define_algebra, Multivector};
+/// use garust_core::{define_algebra, Multivector};
 ///
 /// define_algebra!(pub Spacetime = Cl(1, 3, 0));
 /// assert_eq!(Multivector::<Spacetime, f64>::zero().coeffs.len(), 16);

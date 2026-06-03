@@ -72,78 +72,45 @@
 //!   `cga_plane`, on the null-cone conformal model
 //! - [`Conformal`] — conformal transformations in CGA (translators,
 //!   rotors, and dilations about the origin)
+//!
+//! ## Crate layout
+//!
+//! `garust` is a thin umbrella over a small workspace, so a larger
+//! project — a graph database, a physics engine, an experimental-algebra
+//! sandbox — can depend on exactly the layer it needs:
+//!
+//! - [`garust_core`] — the signature-generic kernel: [`Algebra`] and
+//!   [`define_algebra!`], [`Multivector`], the products and involutions,
+//!   duality, and the *raw* PGA/CGA constructors.
+//! - [`garust_geo`] — the *typed* geometry layer built on the kernel:
+//!   [`Motor`] and [`Conformal`].
+//!
+//! This crate re-exports everything from both, so `use garust::…` is
+//! unchanged; reach past it to a member crate only when you want the
+//! kernel without the geometry (or vice versa).
 
-pub mod algebra;
-pub mod cga;
-pub mod conformal;
-pub mod dual;
-pub mod involutions;
-pub mod motor;
-pub mod multivector;
-pub mod pga;
-pub mod products;
-pub mod scalar;
-pub mod signature;
-pub mod transform;
+// --- Modules (re-exported so `garust::signature`, … keep resolving) ------
+#[doc(no_inline)]
+pub use garust_core::{
+    algebra, cga, dual, involutions, multivector, pga, products, scalar, signature, transform,
+};
+#[doc(no_inline)]
+pub use garust_geo::{conformal, motor};
 
-pub use algebra::{Algebra, BladeStore};
-pub use conformal::Conformal;
-pub use motor::Motor;
-pub use multivector::Multivector;
-pub use scalar::{Real, Scalar};
+// --- The kernel: traits, the multivector, signatures, and aliases --------
+#[doc(inline)]
+pub use garust_core::{
+    Algebra, BladeStore, Cga3, Cga3Sig, Cga3f, Multivector, Pga3, Pga3Sig, Pga3f, Real, Scalar,
+    Sta, StaSig, Staf, Vga2, Vga2Sig, Vga2f, Vga3, Vga3Sig, Vga3f,
+};
 
-// Standard signature markers. Each is a zero-sized type implementing
-// [`Algebra`]; the type aliases below pair them with a scalar. Downstream
-// crates can mint their own with [`define_algebra!`](crate::define_algebra).
-define_algebra!(
-    /// Signature of 2D Euclidean GA `Cl(2, 0, 0)`.
-    pub Vga2Sig = Cl(2, 0, 0)
-);
-define_algebra!(
-    /// Signature of 3D Euclidean GA `Cl(3, 0, 0)`.
-    pub Vga3Sig = Cl(3, 0, 0)
-);
-define_algebra!(
-    /// Signature of 3D Projective GA `Cl(3, 0, 1)`.
-    pub Pga3Sig = Cl(3, 0, 1)
-);
-define_algebra!(
-    /// Signature of 3D Conformal GA `Cl(4, 1, 0)`.
-    pub Cga3Sig = Cl(4, 1, 0)
-);
-define_algebra!(
-    /// Signature of Spacetime Algebra `Cl(1, 3, 0)`.
-    pub StaSig = Cl(1, 3, 0)
-);
+// --- The typed geometry layer --------------------------------------------
+#[doc(inline)]
+pub use garust_geo::{Conformal, Conformal3, Conformal3f, Motor, Motor3, Motor3f};
 
-/// 2D Euclidean Geometric Algebra `Cl(2, 0, 0)` over `f64` — 4 blades.
-pub type Vga2 = Multivector<Vga2Sig, f64>;
-/// 3D Euclidean Geometric Algebra `Cl(3, 0, 0)` over `f64` — 8 blades.
-pub type Vga3 = Multivector<Vga3Sig, f64>;
-/// 3D Projective Geometric Algebra `Cl(3, 0, 1)` over `f64` — 16 blades.
-pub type Pga3 = Multivector<Pga3Sig, f64>;
-/// 3D Conformal Geometric Algebra `Cl(4, 1, 0)` over `f64` — 32 blades.
-pub type Cga3 = Multivector<Cga3Sig, f64>;
-/// Spacetime Algebra `Cl(1, 3, 0)` over `f64` — 16 blades, `(+, −, −, −)`.
-pub type Sta = Multivector<StaSig, f64>;
-
-/// 2D Euclidean Geometric Algebra `Cl(2, 0, 0)` over `f32` — 4 blades.
-pub type Vga2f = Multivector<Vga2Sig, f32>;
-/// 3D Euclidean Geometric Algebra `Cl(3, 0, 0)` over `f32` — 8 blades.
-pub type Vga3f = Multivector<Vga3Sig, f32>;
-/// 3D Projective Geometric Algebra `Cl(3, 0, 1)` over `f32` — 16 blades.
-pub type Pga3f = Multivector<Pga3Sig, f32>;
-/// 3D Conformal Geometric Algebra `Cl(4, 1, 0)` over `f32` — 32 blades.
-pub type Cga3f = Multivector<Cga3Sig, f32>;
-/// Spacetime Algebra `Cl(1, 3, 0)` over `f32` — 16 blades, `(+, −, −, −)`.
-pub type Staf = Multivector<StaSig, f32>;
-
-/// A rigid-body [`Motor`] in 3D PGA over `f64`.
-pub type Motor3 = Motor<f64>;
-/// A rigid-body [`Motor`] in 3D PGA over `f32`.
-pub type Motor3f = Motor<f32>;
-
-/// A [`Conformal`] transformation in 3D CGA over `f64`.
-pub type Conformal3 = Conformal<f64>;
-/// A [`Conformal`] transformation in 3D CGA over `f32`.
-pub type Conformal3f = Conformal<f32>;
+// The signature-minting macro. `#[macro_export]` puts it at the
+// `garust_core` root; re-export it so downstream crates can write
+// `garust::define_algebra!` (the macro's `$crate` paths still resolve
+// through the dependency graph).
+#[doc(inline)]
+pub use garust_core::define_algebra;

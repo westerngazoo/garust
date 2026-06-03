@@ -19,9 +19,9 @@
 
 use core::ops::Mul;
 
-use crate::multivector::Multivector;
-use crate::scalar::{Real, Scalar};
-use crate::Pga3Sig;
+use garust_core::multivector::Multivector;
+use garust_core::scalar::{Real, Scalar};
+use garust_core::Pga3Sig;
 
 /// The PGA multivector type a [`Motor`] wraps: `Cl(3, 0, 1)` over `T`.
 type Pga<T> = Multivector<Pga3Sig, T>;
@@ -118,7 +118,8 @@ impl<T: Real> Motor<T> {
     ///
     /// Unlike [`Motor::rotor`], which spins about an origin axis, this
     /// takes a full PGA line bivector — typically from
-    /// [`Pga3::line_through`] — so the axis can be anywhere. The line is
+    /// [`Pga3::line_through`](garust_core::Multivector::line_through) — so
+    /// the axis can be anywhere. The line is
     /// normalized internally, then `exp(−½·radians·L̂)` is the rotor
     /// about it. Points on the line are fixed; everything else swings
     /// around it. (Compose with a [`Motor::translator`] along the line
@@ -145,7 +146,7 @@ impl<T: Scalar> Mul for Motor<T> {
 #[cfg(test)]
 mod tests {
     use super::Motor;
-    use crate::Pga3;
+    use garust_core::Pga3;
     use std::f64::consts::FRAC_PI_2;
 
     fn approx_eq(a: &[f64], b: &[f64], tol: f64) {

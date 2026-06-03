@@ -1,0 +1,10 @@
+[package]
+name = "garust-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Core of garust: signature-generic geometric algebra — the Algebra trait, Multivector, and the product kernels."
+license.workspace = true
+repository.workspace = true
+keywords = ["geometric-algebra", "clifford-algebra", "math", "ga"]
+categories = ["mathematics"]

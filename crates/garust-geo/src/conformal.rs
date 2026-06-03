@@ -21,14 +21,14 @@
 //! Each generator is a unit versor (`V ~V = 1`), so the reverse-based
 //! sandwich is the exact conjugation `V x V⁻¹`. A dilation rescales a
 //! point's homogeneous *weight*, so read coordinates back with
-//! [`Multivector::to_euclidean`](crate::Multivector::to_euclidean),
+//! [`Multivector::to_euclidean`](garust_core::Multivector::to_euclidean),
 //! which divides that weight out.
 
 use core::ops::Mul;
 
-use crate::multivector::Multivector;
-use crate::scalar::{Real, Scalar};
-use crate::Cga3Sig;
+use garust_core::multivector::Multivector;
+use garust_core::scalar::{Real, Scalar};
+use garust_core::Cga3Sig;
 
 /// The PGA-sibling multivector type a [`Conformal`] wraps: `Cl(4, 1, 0)`
 /// over `T`.
@@ -71,7 +71,7 @@ impl<T: Scalar> Conformal<T> {
     ///
     /// A dilation rescales a point's weight; recover Euclidean
     /// coordinates with
-    /// [`Multivector::to_euclidean`](crate::Multivector::to_euclidean).
+    /// [`Multivector::to_euclidean`](garust_core::Multivector::to_euclidean).
     pub fn apply(&self, x: &Cga<T>) -> Cga<T> {
         self.versor.sandwich(x)
     }
@@ -156,7 +156,7 @@ impl<T: Scalar> Mul for Conformal<T> {
 #[cfg(test)]
 mod tests {
     use super::Conformal;
-    use crate::Cga3;
+    use garust_core::Cga3;
     use std::f64::consts::FRAC_PI_2;
 
     fn approx(a: (f64, f64, f64), b: (f64, f64, f64)) {

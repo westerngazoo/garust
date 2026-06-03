@@ -5,3 +5,18 @@ version = 3
 [[package]]
 name = "garust"
 version = "0.1.0"
+dependencies = [
+ "garust-core",
+ "garust-geo",
+]
+
+[[package]]
+name = "garust-core"
+version = "0.1.0"
+
+[[package]]
+name = "garust-geo"
+version = "0.1.0"
+dependencies = [
+ "garust-core",
+]

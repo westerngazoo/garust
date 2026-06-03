@@ -40,7 +40,7 @@ impl<T: Scalar> Multivector<Pga3Sig, T> {
     /// A Euclidean point at `(x, y, z)`, as a grade-3 trivector.
     ///
     /// ```
-    /// use garust::Pga3;
+    /// use garust_core::Pga3;
     /// let p = Pga3::point(1.0, 2.0, 3.0);
     /// assert_eq!(p.grade(3).coeffs, p.coeffs); // pure trivector
     /// ```
@@ -86,7 +86,7 @@ impl<T: Scalar> Multivector<Pga3Sig, T> {
     /// coefficient — so `basis(9)` (stored as `e1∧e0`) prints as `-e01`.
     ///
     /// ```
-    /// use garust::Pga3;
+    /// use garust_core::Pga3;
     /// let p = Pga3::point(1.0, 2.0, 3.0);
     /// assert_eq!(p.display_pga().to_string(), "e123 - 3·e012 + 2·e013 - e023");
     /// ```
