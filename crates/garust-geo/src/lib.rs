@@ -9,7 +9,9 @@
 //! - [`Conformal`] — a conformal transformation in 3D CGA `Cl(4, 1, 0)`
 //!   (the rigid motions plus uniform scaling about the origin);
 //! - the [`pga`] module — typed PGA geometry ([`pga::Point`],
-//!   [`pga::Line`], [`pga::Plane`]) with type-checked join/meet incidence.
+//!   [`pga::Line`], [`pga::Plane`]) with type-checked join/meet incidence;
+//! - the [`cga`] module — typed CGA geometry ([`cga::Point`],
+//!   [`cga::Sphere`], [`cga::Plane`]) with type-checked incidence tests.
 //!
 //! The transforms are thin newtypes over a core multivector: build the
 //! generators, compose them with `*`, and apply them to geometry with the
@@ -17,6 +19,7 @@
 //! [`garust`](https://crates.io/crates/garust) crate, which re-exports this
 //! one alongside the core.
 
+pub mod cga;
 pub mod conformal;
 pub mod motor;
 pub mod pga;

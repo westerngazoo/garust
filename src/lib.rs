@@ -78,6 +78,8 @@
 //!   `cga_plane`, on the null-cone conformal model
 //! - [`Conformal`] — conformal transformations in CGA (translators,
 //!   rotors, and dilations about the origin)
+//! - typed CGA geometry in [`cga`]: [`cga::Point`], [`cga::Sphere`],
+//!   [`cga::Plane`] with type-checked incidence (point-on-sphere/plane)
 //!
 //! ## Crate layout
 //!
@@ -89,7 +91,7 @@
 //!   [`define_algebra!`], [`Multivector`], the products and involutions,
 //!   duality, and the *raw* PGA/CGA constructors.
 //! - [`garust_geo`] — the *typed* geometry layer built on the kernel:
-//!   [`Motor`], [`Conformal`], and the typed [`pga`] objects.
+//!   [`Motor`], [`Conformal`], and the typed [`pga`] and [`cga`] objects.
 //!
 //! This crate re-exports everything from both, so `use garust::…` is
 //! unchanged; reach past it to a member crate only when you want the
@@ -98,12 +100,13 @@
 // --- Modules (re-exported so `garust::signature`, … keep resolving) ------
 #[doc(no_inline)]
 pub use garust_core::{
-    algebra, cga, dual, involutions, multivector, products, scalar, signature, transform,
+    algebra, dual, involutions, multivector, products, scalar, signature, transform,
 };
-// `pga` comes from the geometry layer: it bundles the typed Point/Line/Plane
-// objects with the kernel's PGA-aware Display adapter (re-exported there).
+// `pga` and `cga` come from the geometry layer: each bundles that model's
+// typed objects (Point/Line/Plane, Point/Sphere/Plane), and `pga` also
+// re-exports the kernel's PGA-aware Display adapter.
 #[doc(no_inline)]
-pub use garust_geo::{conformal, motor, pga};
+pub use garust_geo::{cga, conformal, motor, pga};
 
 // --- The kernel: traits, the multivector, signatures, and aliases --------
 #[doc(inline)]
