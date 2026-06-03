@@ -43,3 +43,8 @@ syn = "2"
 quote = "1"
 proc-macro2 = "1"
 proc-macro-crate = "3"
+
+# Property-based testing. A dev-dependency only (see each crate's
+# [dev-dependencies]): it never enters the normal dependency graph, so
+# downstream consumers and the default build stay dependency-free.
+proptest = "1"

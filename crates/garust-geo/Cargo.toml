@@ -16,3 +16,6 @@ derive = ["garust-core/derive"]
 
 [dependencies]
 garust-core = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
