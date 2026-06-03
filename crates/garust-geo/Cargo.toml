@@ -9,5 +9,10 @@ repository.workspace = true
 keywords = ["geometric-algebra", "pga", "cga", "motor", "conformal"]
 categories = ["mathematics"]
 
+[features]
+# Forwards to `garust-core/derive` so `#[derive(Algebra)]` is reachable for
+# consumers of this crate; also gates the cross-crate derive test.
+derive = ["garust-core/derive"]
+
 [dependencies]
 garust-core = { workspace = true }

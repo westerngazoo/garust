@@ -1,0 +1,19 @@
+[package]
+name = "garust-derive"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Optional #[derive(Algebra)] proc-macro for garust — the derive path to a Clifford signature Cl(P, Q, R)."
+license.workspace = true
+repository.workspace = true
+keywords = ["geometric-algebra", "clifford-algebra", "derive", "proc-macro"]
+categories = ["mathematics", "rust-patterns"]
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { workspace = true }
+quote = { workspace = true }
+proc-macro2 = { workspace = true }
+proc-macro-crate = { workspace = true }

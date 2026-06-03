@@ -49,13 +49,16 @@
 //!
 //! For a custom scalar type `S`, name the full generic form with the
 //! signature marker: `Multivector::<Vga3Sig, S>`. Mint a marker for a
-//! brand-new signature with [`define_algebra!`].
+//! brand-new signature with [`define_algebra!`] — or, under the optional
+//! `derive` feature, by writing the marker yourself and adding
+//! `#[derive(Algebra)]` with an `#[algebra(p = …, q = …, r = …)]` attribute.
 //!
 //! ## What's implemented
 //!
 //! - [`Algebra`] — signatures reified as zero-sized marker types, so a
 //!   multivector is `Multivector<A, T>` (no redundant `DIM` parameter);
-//!   mint your own with [`define_algebra!`]
+//!   mint your own with [`define_algebra!`] (or, under the optional
+//!   `derive` feature, `#[derive(Algebra)]`)
 //! - [`Multivector`] — dense `[T; 2^N]` element type
 //! - linear ops: add, sub, neg, scalar multiplication, equality
 //! - the geometric product, plus wedge `∧`, inner `·`, scalar product

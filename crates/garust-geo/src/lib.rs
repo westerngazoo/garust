@@ -30,3 +30,43 @@ pub type Motor3f = Motor<f32>;
 pub type Conformal3 = Conformal<f64>;
 /// A [`Conformal`] transformation in 3D CGA over `f32`.
 pub type Conformal3f = Conformal<f32>;
+
+// The `#[derive(Algebra)]` macro is exercised from *this* crate on purpose:
+// garust-geo depends on garust-core by name, so the derive must resolve and
+// emit a cross-crate `::garust_core` path (the realistic consumer case),
+// which a test inside garust-core itself could not check.
+#[cfg(all(test, feature = "derive"))]
+mod derive_tests {
+    use garust_core::{Algebra, Multivector};
+
+    /// A marker the user writes by hand, with the `Algebra` impl derived.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default, Algebra)]
+    #[algebra(p = 3, q = 0, r = 1)]
+    struct DerivedPga;
+
+    #[test]
+    fn derive_yields_the_same_signature_as_define_algebra() {
+        assert_eq!(<DerivedPga as Algebra>::P, 3);
+        assert_eq!(<DerivedPga as Algebra>::Q, 0);
+        assert_eq!(<DerivedPga as Algebra>::R, 1);
+        assert_eq!(<DerivedPga as Algebra>::N, 4);
+        assert_eq!(<DerivedPga as Algebra>::DIM, 16);
+
+        // The derived storage has 2^4 = 16 slots and the kernel runs on it.
+        let zero = Multivector::<DerivedPga, f64>::zero();
+        assert_eq!(zero.coeffs.len(), 16);
+        let e1 = Multivector::<DerivedPga, f64>::basis(1);
+        assert_eq!((e1 * e1).scalar_part(), 1.0);
+    }
+
+    #[test]
+    fn omitted_q_and_r_default_to_zero() {
+        #[derive(Clone, Copy, Debug, Algebra)]
+        #[algebra(p = 2)]
+        struct Euclidean2;
+
+        assert_eq!(<Euclidean2 as Algebra>::Q, 0);
+        assert_eq!(<Euclidean2 as Algebra>::R, 0);
+        assert_eq!(<Euclidean2 as Algebra>::DIM, 4);
+    }
+}

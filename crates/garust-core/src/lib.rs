@@ -38,6 +38,32 @@ pub use algebra::{Algebra, BladeStore};
 pub use multivector::Multivector;
 pub use scalar::{Real, Scalar};
 
+/// Derive macro for [`Algebra`] — the opt-in proc-macro alternative to
+/// [`define_algebra!`], available under the `derive` feature.
+///
+/// `define_algebra!` *declares* a marker type and implements [`Algebra`]
+/// for it in one step, with no dependencies. `#[derive(Algebra)]` instead
+/// implements the trait for a marker you write yourself, so it can carry
+/// your own derives, attributes, and docs. Give the signature with an
+/// `#[algebra(p = …, q = …, r = …)]` attribute (`p` required; `q` and `r`
+/// default to `0`):
+///
+/// ```ignore
+/// use garust_core::{Algebra, Multivector};
+///
+/// #[derive(Clone, Copy, Debug, Algebra)]
+/// #[algebra(p = 2)] // Cl(2, 0, 0)
+/// struct MyPlane;
+///
+/// assert_eq!(Multivector::<MyPlane, f64>::zero().coeffs.len(), 4);
+/// ```
+///
+/// The two names coexist because they live in different namespaces — `use
+/// garust_core::Algebra;` brings both the trait and this derive into scope,
+/// exactly as `serde::Serialize` does.
+#[cfg(feature = "derive")]
+pub use garust_derive::Algebra;
+
 // Standard signature markers. Each is a zero-sized type implementing
 // [`Algebra`]; the type aliases below pair them with a scalar. Downstream
 // crates can mint their own with [`define_algebra!`].

@@ -8,3 +8,11 @@ license.workspace = true
 repository.workspace = true
 keywords = ["geometric-algebra", "clifford-algebra", "math", "ga"]
 categories = ["mathematics"]
+
+[features]
+# Opt-in `#[derive(Algebra)]`. Off by default so the crate stays zero-dep;
+# enabling it pulls in the `garust-derive` proc-macro and its toolchain.
+derive = ["dep:garust-derive"]
+
+[dependencies]
+garust-derive = { workspace = true, optional = true }

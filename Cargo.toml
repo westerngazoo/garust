@@ -13,12 +13,17 @@ categories = ["mathematics"]
 [lib]
 name = "garust"
 
+[features]
+# Opt-in `#[derive(Algebra)]`, forwarded to garust-core. Off by default so
+# the umbrella crate stays dependency-free unless you ask for the derive.
+derive = ["garust-core/derive"]
+
 [dependencies]
 garust-core = { workspace = true }
 garust-geo = { workspace = true }
 
 [workspace]
-members = ["crates/garust-core", "crates/garust-geo"]
+members = ["crates/garust-core", "crates/garust-geo", "crates/garust-derive"]
 
 [workspace.package]
 version = "0.1.0"
@@ -30,3 +35,11 @@ repository = "https://github.com/westerngazoo/garust"
 [workspace.dependencies]
 garust-core = { version = "0.1.0", path = "crates/garust-core" }
 garust-geo = { version = "0.1.0", path = "crates/garust-geo" }
+garust-derive = { version = "0.1.0", path = "crates/garust-derive" }
+
+# Proc-macro toolchain — pulled in only when the optional `derive` feature
+# is enabled, so the default build stays dependency-free.
+syn = "2"
+quote = "1"
+proc-macro2 = "1"
+proc-macro-crate = "3"

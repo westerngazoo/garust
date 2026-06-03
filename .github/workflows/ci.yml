@@ -36,14 +36,20 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+      - name: Clippy (all features)
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
       - name: Tests
         run: cargo test --workspace --all-targets
+
+      - name: Tests (all features — exercises #[derive(Algebra)])
+        run: cargo test --workspace --all-targets --all-features
 
       - name: Doc tests
         run: cargo test --workspace --doc
 
       - name: Docs (deny broken intra-doc links)
-        run: cargo doc --workspace --no-deps
+        run: cargo doc --workspace --no-deps --all-features
         env:
           RUSTDOCFLAGS: -D warnings
 
@@ -56,5 +62,8 @@ jobs:
       - name: Install Rust 1.79
         uses: dtolnay/rust-toolchain@1.79
 
+      # The optional garust-derive proc-macro pulls a heavier toolchain
+      # (syn, proc-macro-crate) whose own MSRV need not bind the library, so
+      # exclude it — the MSRV gate covers the zero-dependency default surface.
       - name: Build on MSRV
-        run: cargo build --workspace --all-targets
+        run: cargo build --workspace --exclude garust-derive --all-targets
