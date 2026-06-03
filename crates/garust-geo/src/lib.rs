@@ -7,16 +7,19 @@
 //! - [`Motor`] — a rigid-body motion in 3D PGA `Cl(3, 0, 1)` (rotors,
 //!   translators, and their screw-motion compositions);
 //! - [`Conformal`] — a conformal transformation in 3D CGA `Cl(4, 1, 0)`
-//!   (the rigid motions plus uniform scaling about the origin).
+//!   (the rigid motions plus uniform scaling about the origin);
+//! - the [`pga`] module — typed PGA geometry ([`pga::Point`],
+//!   [`pga::Line`], [`pga::Plane`]) with type-checked join/meet incidence.
 //!
-//! Both are thin newtypes over a core multivector: build the generators,
-//! compose them with `*`, and apply them to geometry with the sandwich
-//! product. Most users depend on the umbrella
+//! The transforms are thin newtypes over a core multivector: build the
+//! generators, compose them with `*`, and apply them to geometry with the
+//! sandwich product. Most users depend on the umbrella
 //! [`garust`](https://crates.io/crates/garust) crate, which re-exports this
 //! one alongside the core.
 
 pub mod conformal;
 pub mod motor;
+pub mod pga;
 
 pub use conformal::Conformal;
 pub use motor::Motor;

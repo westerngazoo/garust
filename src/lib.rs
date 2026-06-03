@@ -71,6 +71,9 @@
 //!   `line_through`, with meet/join doing real incidence geometry
 //! - [`Motor`] — rigid-body motions in PGA (rotors, translators, and
 //!   their screw-motion compositions)
+//! - typed PGA geometry in [`pga`]: [`pga::Point`], [`pga::Line`],
+//!   [`pga::Plane`] with type-checked join/meet incidence
+//!   (`a.meet(&b).meet(&c)`, `a.join(&b).join(&c)`)
 //! - CGA geometric constructors for `Cl(4,1,0)`: `cga_point`, `sphere`,
 //!   `cga_plane`, on the null-cone conformal model
 //! - [`Conformal`] — conformal transformations in CGA (translators,
@@ -86,7 +89,7 @@
 //!   [`define_algebra!`], [`Multivector`], the products and involutions,
 //!   duality, and the *raw* PGA/CGA constructors.
 //! - [`garust_geo`] — the *typed* geometry layer built on the kernel:
-//!   [`Motor`] and [`Conformal`].
+//!   [`Motor`], [`Conformal`], and the typed [`pga`] objects.
 //!
 //! This crate re-exports everything from both, so `use garust::…` is
 //! unchanged; reach past it to a member crate only when you want the
@@ -95,10 +98,12 @@
 // --- Modules (re-exported so `garust::signature`, … keep resolving) ------
 #[doc(no_inline)]
 pub use garust_core::{
-    algebra, cga, dual, involutions, multivector, pga, products, scalar, signature, transform,
+    algebra, cga, dual, involutions, multivector, products, scalar, signature, transform,
 };
+// `pga` comes from the geometry layer: it bundles the typed Point/Line/Plane
+// objects with the kernel's PGA-aware Display adapter (re-exported there).
 #[doc(no_inline)]
-pub use garust_geo::{conformal, motor};
+pub use garust_geo::{conformal, motor, pga};
 
 // --- The kernel: traits, the multivector, signatures, and aliases --------
 #[doc(inline)]
