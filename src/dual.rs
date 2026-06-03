@@ -30,13 +30,12 @@
 //! identically in Euclidean, projective, conformal, and spacetime
 //! algebras. `lc` and `rc` are mutual inverses (`lc(rc(M)) = M`).
 
+use crate::algebra::Algebra;
 use crate::multivector::Multivector;
 use crate::scalar::Scalar;
 use crate::signature::swap_sign;
 
-impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize>
-    Multivector<T, P, Q, R, DIM>
-{
+impl<A: Algebra, T: Scalar> Multivector<A, T> {
     /// The unit pseudoscalar `I = e1 ∧ e2 ∧ … ∧ eN` — the single
     /// top-grade blade, living at index `DIM - 1` (all bits set).
     ///
@@ -44,7 +43,7 @@ impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize
     /// ([`Multivector::regressive`]), mirroring the way the scalar `1`
     /// is the identity of the geometric product.
     pub fn pseudoscalar() -> Self {
-        Self::basis(DIM - 1)
+        Self::basis(A::DIM - 1)
     }
 
     /// Right complement, defined blade-by-blade by `e_S ∧ rc(e_S) = I`.
@@ -55,8 +54,8 @@ impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize
     /// metric dual is not. Inverse of [`Multivector::left_complement`].
     pub fn right_complement(&self) -> Self {
         let mut out = Self::zero();
-        let top = DIM - 1;
-        for i in 0..DIM {
+        let top = A::DIM - 1;
+        for i in 0..A::DIM {
             let c = self.coeffs[i];
             if c == T::ZERO {
                 continue;
@@ -79,8 +78,8 @@ impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize
     /// present has a self-reversing grade.
     pub fn left_complement(&self) -> Self {
         let mut out = Self::zero();
-        let top = DIM - 1;
-        for i in 0..DIM {
+        let top = A::DIM - 1;
+        for i in 0..A::DIM {
             let c = self.coeffs[i];
             if c == T::ZERO {
                 continue;

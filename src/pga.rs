@@ -31,11 +31,12 @@ use core::fmt;
 
 use crate::multivector::Multivector;
 use crate::scalar::Scalar;
+use crate::Pga3Sig;
 
 /// PGA constructors are defined only for the `Cl(3, 0, 1)` signature, so
-/// this `impl` is pinned to those exact const parameters. It covers both
-/// `Pga3` (`f64`) and `Pga3f` (`f32`).
-impl<T: Scalar> Multivector<T, 3, 0, 1, 16> {
+/// this `impl` is pinned to the `Pga3Sig` marker. It covers both `Pga3`
+/// (`f64`) and `Pga3f` (`f32`).
+impl<T: Scalar> Multivector<Pga3Sig, T> {
     /// A Euclidean point at `(x, y, z)`, as a grade-3 trivector.
     ///
     /// ```
@@ -98,7 +99,7 @@ impl<T: Scalar> Multivector<T, 3, 0, 1, 16> {
 /// generator `e0` and writes it first in each blade. Build one with
 /// [`Multivector::display_pga`].
 pub struct PgaDisplay<T: Scalar> {
-    mv: Multivector<T, 3, 0, 1, 16>,
+    mv: Multivector<Pga3Sig, T>,
 }
 
 impl<T: Scalar> fmt::Display for PgaDisplay<T> {

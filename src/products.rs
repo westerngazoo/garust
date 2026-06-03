@@ -25,18 +25,17 @@
 //!   product. It's an `f64`-valued primitive that comes up everywhere
 //!   (norms, projections, the kernel of the versor inverse).
 
+use crate::algebra::Algebra;
 use crate::multivector::Multivector;
 use crate::scalar::Scalar;
 use crate::signature::{blade_product, grade_of, swap_sign};
 
-impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize>
-    Multivector<T, P, Q, R, DIM>
-{
+impl<A: Algebra, T: Scalar> Multivector<A, T> {
     /// Grade-`k` projection `⟨M⟩_k`. Zeros every coefficient whose
     /// blade has popcount different from `k`.
     pub fn grade(&self, k: usize) -> Self {
         let mut out = Self::zero();
-        for i in 0..DIM {
+        for i in 0..A::DIM {
             if grade_of(i) == k {
                 out.coeffs[i] = self.coeffs[i];
             }
@@ -53,12 +52,12 @@ impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize
     /// makes `a | b == a + b == a ^ b` for the surviving pairs.
     pub fn wedge(&self, rhs: &Self) -> Self {
         let mut out = Self::zero();
-        for a in 0..DIM {
+        for a in 0..A::DIM {
             let ca = self.coeffs[a];
             if ca == T::ZERO {
                 continue;
             }
-            for b in 0..DIM {
+            for b in 0..A::DIM {
                 if a & b != 0 {
                     continue;
                 }
@@ -86,7 +85,7 @@ impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize
     /// `blade_product`.
     pub fn inner(&self, rhs: &Self) -> Self {
         let mut out = Self::zero();
-        for a in 0..DIM {
+        for a in 0..A::DIM {
             let ca = self.coeffs[a];
             if ca == T::ZERO {
                 continue;
@@ -95,7 +94,7 @@ impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize
             if ga == 0 {
                 continue;
             }
-            for b in 0..DIM {
+            for b in 0..A::DIM {
                 let cb = rhs.coeffs[b];
                 if cb == T::ZERO {
                     continue;
@@ -105,7 +104,7 @@ impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize
                     continue;
                 }
                 let target = (ga as isize - gb as isize).unsigned_abs();
-                let (idx, sign) = blade_product(a, b, P, Q);
+                let (idx, sign) = blade_product(a, b, A::P, A::Q);
                 if sign != 0 && grade_of(idx) == target {
                     let term = ca * cb;
                     if sign > 0 {
@@ -127,8 +126,8 @@ impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize
     /// always a scalar by construction.
     pub fn scalar_product(&self, rhs: &Self) -> T {
         let mut acc = T::ZERO;
-        for i in 0..DIM {
-            let (_idx, sign) = blade_product(i, i, P, Q);
+        for i in 0..A::DIM {
+            let (_idx, sign) = blade_product(i, i, A::P, A::Q);
             if sign != 0 {
                 let term = self.coeffs[i] * rhs.coeffs[i];
                 if sign > 0 {
@@ -207,7 +206,8 @@ mod tests {
     fn inner_is_signature_aware() {
         // In Cl(0,1,0) the only vector squares to -1, so v · v = -1.
         use crate::Multivector;
-        type Anti = Multivector<f64, 0, 1, 0, 2>;
+        crate::define_algebra!(Cl010 = Cl(0, 1, 0));
+        type Anti = Multivector<Cl010, f64>;
         let e1 = Anti::basis(1);
         assert_eq!(e1.inner(&e1).coeffs, Anti::scalar(-1.0).coeffs);
     }

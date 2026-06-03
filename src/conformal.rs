@@ -28,10 +28,11 @@ use core::ops::Mul;
 
 use crate::multivector::Multivector;
 use crate::scalar::{Real, Scalar};
+use crate::Cga3Sig;
 
 /// The PGA-sibling multivector type a [`Conformal`] wraps: `Cl(4, 1, 0)`
 /// over `T`.
-type Cga<T> = Multivector<T, 4, 1, 0, 32>;
+type Cga<T> = Multivector<Cga3Sig, T>;
 
 /// A conformal transformation in 3D CGA — a versor of `Cl(4, 1, 0)`.
 ///
@@ -39,7 +40,7 @@ type Cga<T> = Multivector<T, 4, 1, 0, 32>;
 /// [`Conformal::rotor`], or [`Conformal::dilator`]; compose with `*` (or
 /// [`Conformal::compose`]); and move geometry with [`Conformal::apply`].
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Conformal<T> {
+pub struct Conformal<T: Scalar> {
     versor: Cga<T>,
 }
 

@@ -25,19 +25,18 @@
 //! For arbitrary multivectors it's still a well-defined scalar but
 //! isn't necessarily positive and isn't a norm in any geometric sense.
 
+use crate::algebra::Algebra;
 use crate::multivector::Multivector;
 use crate::scalar::{Real, Scalar};
 use crate::signature::grade_of;
 
-impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize>
-    Multivector<T, P, Q, R, DIM>
-{
+impl<A: Algebra, T: Scalar> Multivector<A, T> {
     /// Reverse `~M`. Reverses the order of generators in every blade,
     /// which flips the sign whenever the grade `k` satisfies
     /// `k(k − 1) / 2 ≡ 1 (mod 2)` — grades 2, 3, 6, 7, ...
     pub fn reverse(&self) -> Self {
         let mut out = *self;
-        for i in 0..DIM {
+        for i in 0..A::DIM {
             if (grade_of(i) / 2) & 1 == 1 {
                 out.coeffs[i] = -out.coeffs[i];
             }
@@ -49,7 +48,7 @@ impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize
     /// Equivalent to substituting `−e_k` for every generator `e_k`.
     pub fn grade_involution(&self) -> Self {
         let mut out = *self;
-        for i in 0..DIM {
+        for i in 0..A::DIM {
             if grade_of(i) & 1 == 1 {
                 out.coeffs[i] = -out.coeffs[i];
             }
@@ -61,7 +60,7 @@ impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize
     /// Flips grades 1, 2, 5, 6, ... — i.e. when `k(k + 1) / 2` is odd.
     pub fn conjugate(&self) -> Self {
         let mut out = *self;
-        for i in 0..DIM {
+        for i in 0..A::DIM {
             // The sign exponent is k(k+1)/2 mod 2; (k+1)/2 has the same
             // parity, so we test that. Written as explicit arithmetic
             // rather than div_ceil to mirror the textbook formula.
@@ -82,9 +81,7 @@ impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize
     }
 }
 
-impl<T: Real, const P: usize, const Q: usize, const R: usize, const DIM: usize>
-    Multivector<T, P, Q, R, DIM>
-{
+impl<A: Algebra, T: Real> Multivector<A, T> {
     /// The magnitude `|M| = √|⟨M ~M⟩_0|`.
     ///
     /// The absolute value is taken before the square root: in mixed
@@ -173,7 +170,8 @@ mod tests {
         // In Cl(0,1,0) the lone vector squares to -1, so norm_squared is
         // negative — but the norm itself must be the real length 2.
         use crate::Multivector;
-        type Anti = Multivector<f64, 0, 1, 0, 2>;
+        crate::define_algebra!(Cl010 = Cl(0, 1, 0));
+        type Anti = Multivector<Cl010, f64>;
         let v = Anti { coeffs: [0.0, 2.0] };
         assert_eq!(v.norm_squared(), -4.0);
         assert!((v.norm() - 2.0).abs() < 1e-12);

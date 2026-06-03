@@ -123,8 +123,9 @@ let big  = scale.apply(&unit);                    // now radius 2
 
 ## What's implemented
 
-- `Multivector<T, P, Q, R, DIM>` — a dense `[T; 2^N]` element, generic
-  over signature and scalar
+- `Multivector<A, T>` — a dense `[T; 2^N]` element, generic over the
+  signature marker `A: Algebra` and the scalar `T` (mint new signatures
+  with the `define_algebra!` macro)
 - linear ops: `+`, `−`, negation, scalar multiplication (both sides),
   equality, `Display`
 - the **geometric product**, plus wedge `∧`, inner `·`, and scalar
@@ -147,7 +148,7 @@ let big  = scale.apply(&unit);                    // now radius 2
 [`Scalar`] (and [`Real`] for the exponential). `f32` and `f64` are
 provided; any ordered field — dual numbers for autodiff, fixed-point
 types — can opt in by implementing those traits. For a custom scalar `S`,
-name the full form: `Multivector::<S, 3, 0, 0, 8>`.
+name the full form with a signature marker: `Multivector::<Vga3Sig, S>`.
 
 ## Design notes
 

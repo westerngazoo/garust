@@ -47,11 +47,15 @@
 //! assert_eq!((w * w).scalar_part(), 2.0_f32);
 //! ```
 //!
-//! For a custom scalar type `S`, name the full generic form:
-//! `Multivector::<S, 3, 0, 0, 8>`.
+//! For a custom scalar type `S`, name the full generic form with the
+//! signature marker: `Multivector::<Vga3Sig, S>`. Mint a marker for a
+//! brand-new signature with [`define_algebra!`].
 //!
 //! ## What's implemented
 //!
+//! - [`Algebra`] — signatures reified as zero-sized marker types, so a
+//!   multivector is `Multivector<A, T>` (no redundant `DIM` parameter);
+//!   mint your own with [`define_algebra!`]
 //! - [`Multivector`] — dense `[T; 2^N]` element type
 //! - linear ops: add, sub, neg, scalar multiplication, equality
 //! - the geometric product, plus wedge `∧`, inner `·`, scalar product
@@ -69,6 +73,7 @@
 //! - [`Conformal`] — conformal transformations in CGA (translators,
 //!   rotors, and dilations about the origin)
 
+pub mod algebra;
 pub mod cga;
 pub mod conformal;
 pub mod dual;
@@ -81,32 +86,57 @@ pub mod scalar;
 pub mod signature;
 pub mod transform;
 
+pub use algebra::{Algebra, BladeStore};
 pub use conformal::Conformal;
 pub use motor::Motor;
 pub use multivector::Multivector;
 pub use scalar::{Real, Scalar};
 
+// Standard signature markers. Each is a zero-sized type implementing
+// [`Algebra`]; the type aliases below pair them with a scalar. Downstream
+// crates can mint their own with [`define_algebra!`](crate::define_algebra).
+define_algebra!(
+    /// Signature of 2D Euclidean GA `Cl(2, 0, 0)`.
+    pub Vga2Sig = Cl(2, 0, 0)
+);
+define_algebra!(
+    /// Signature of 3D Euclidean GA `Cl(3, 0, 0)`.
+    pub Vga3Sig = Cl(3, 0, 0)
+);
+define_algebra!(
+    /// Signature of 3D Projective GA `Cl(3, 0, 1)`.
+    pub Pga3Sig = Cl(3, 0, 1)
+);
+define_algebra!(
+    /// Signature of 3D Conformal GA `Cl(4, 1, 0)`.
+    pub Cga3Sig = Cl(4, 1, 0)
+);
+define_algebra!(
+    /// Signature of Spacetime Algebra `Cl(1, 3, 0)`.
+    pub StaSig = Cl(1, 3, 0)
+);
+
 /// 2D Euclidean Geometric Algebra `Cl(2, 0, 0)` over `f64` — 4 blades.
-pub type Vga2 = Multivector<f64, 2, 0, 0, 4>;
+pub type Vga2 = Multivector<Vga2Sig, f64>;
 /// 3D Euclidean Geometric Algebra `Cl(3, 0, 0)` over `f64` — 8 blades.
-pub type Vga3 = Multivector<f64, 3, 0, 0, 8>;
+pub type Vga3 = Multivector<Vga3Sig, f64>;
 /// 3D Projective Geometric Algebra `Cl(3, 0, 1)` over `f64` — 16 blades.
-pub type Pga3 = Multivector<f64, 3, 0, 1, 16>;
+pub type Pga3 = Multivector<Pga3Sig, f64>;
 /// 3D Conformal Geometric Algebra `Cl(4, 1, 0)` over `f64` — 32 blades.
-pub type Cga3 = Multivector<f64, 4, 1, 0, 32>;
+pub type Cga3 = Multivector<Cga3Sig, f64>;
 /// Spacetime Algebra `Cl(1, 3, 0)` over `f64` — 16 blades, `(+, −, −, −)`.
-pub type Sta = Multivector<f64, 1, 3, 0, 16>;
+pub type Sta = Multivector<StaSig, f64>;
 
 /// 2D Euclidean Geometric Algebra `Cl(2, 0, 0)` over `f32` — 4 blades.
-pub type Vga2f = Multivector<f32, 2, 0, 0, 4>;
+pub type Vga2f = Multivector<Vga2Sig, f32>;
 /// 3D Euclidean Geometric Algebra `Cl(3, 0, 0)` over `f32` — 8 blades.
-pub type Vga3f = Multivector<f32, 3, 0, 0, 8>;
+pub type Vga3f = Multivector<Vga3Sig, f32>;
 /// 3D Projective Geometric Algebra `Cl(3, 0, 1)` over `f32` — 16 blades.
-pub type Pga3f = Multivector<f32, 3, 0, 1, 16>;
+pub type Pga3f = Multivector<Pga3Sig, f32>;
 /// 3D Conformal Geometric Algebra `Cl(4, 1, 0)` over `f32` — 32 blades.
-pub type Cga3f = Multivector<f32, 4, 1, 0, 32>;
+pub type Cga3f = Multivector<Cga3Sig, f32>;
 /// Spacetime Algebra `Cl(1, 3, 0)` over `f32` — 16 blades, `(+, −, −, −)`.
-pub type Staf = Multivector<f32, 1, 3, 0, 16>;
+pub type Staf = Multivector<StaSig, f32>;
 
 /// A rigid-body [`Motor`] in 3D PGA over `f64`.
 pub type Motor3 = Motor<f64>;

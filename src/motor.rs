@@ -21,9 +21,10 @@ use core::ops::Mul;
 
 use crate::multivector::Multivector;
 use crate::scalar::{Real, Scalar};
+use crate::Pga3Sig;
 
 /// The PGA multivector type a [`Motor`] wraps: `Cl(3, 0, 1)` over `T`.
-type Pga<T> = Multivector<T, 3, 0, 1, 16>;
+type Pga<T> = Multivector<Pga3Sig, T>;
 
 /// A rigid-body motion in 3D PGA — an even-grade versor of `Cl(3, 0, 1)`.
 ///
@@ -31,7 +32,7 @@ type Pga<T> = Multivector<T, 3, 0, 1, 16>;
 /// [`Motor::rotor`]; compose with `*` (or [`Motor::compose`]); and move
 /// geometry with [`Motor::apply`].
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Motor<T> {
+pub struct Motor<T: Scalar> {
     versor: Pga<T>,
 }
 

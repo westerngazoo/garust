@@ -35,11 +35,12 @@
 
 use crate::multivector::Multivector;
 use crate::scalar::Scalar;
+use crate::Cga3Sig;
 
 /// CGA constructors are defined only for the `Cl(4, 1, 0)` signature, so
-/// this `impl` is pinned to those exact const parameters. It covers both
-/// `Cga3` (`f64`) and `Cga3f` (`f32`).
-impl<T: Scalar> Multivector<T, 4, 1, 0, 32> {
+/// this `impl` is pinned to the `Cga3Sig` marker. It covers both `Cga3`
+/// (`f64`) and `Cga3f` (`f32`).
+impl<T: Scalar> Multivector<Cga3Sig, T> {
     /// The point at infinity `n∞ = e+ + e−`. A null vector
     /// (`n∞² = 0`) fixed by every Euclidean motion.
     pub fn n_infinity() -> Self {
