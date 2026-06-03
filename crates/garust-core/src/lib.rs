@@ -23,6 +23,8 @@
 //! crate, which re-exports both; reach for `garust-core` directly only when
 //! you want the algebra without the geometry.
 
+#![deny(missing_docs)]
+
 pub mod algebra;
 pub mod cga;
 pub mod dual;

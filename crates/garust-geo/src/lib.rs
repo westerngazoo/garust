@@ -19,6 +19,8 @@
 //! [`garust`](https://crates.io/crates/garust) crate, which re-exports this
 //! one alongside the core.
 
+#![deny(missing_docs)]
+
 pub mod cga;
 pub mod conformal;
 pub mod motor;

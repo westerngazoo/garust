@@ -97,6 +97,8 @@
 //! unchanged; reach past it to a member crate only when you want the
 //! kernel without the geometry (or vice versa).
 
+#![deny(missing_docs)]
+
 // --- Modules (re-exported so `garust::signature`, … keep resolving) ------
 #[doc(no_inline)]
 pub use garust_core::{

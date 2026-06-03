@@ -37,6 +37,8 @@
 //! default to `0`, so a Euclidean algebra is just `#[algebra(p = 3)]` and a
 //! projective one `#[algebra(p = 3, r = 1)]`.
 
+#![deny(missing_docs)]
+
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use proc_macro_crate::{crate_name, FoundCrate};
