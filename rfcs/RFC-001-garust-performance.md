@@ -134,3 +134,25 @@ phase-2 closed-form `apply`. `wedge`/`regressive` are unchanged — they use
 their own loops, not the geometric-product table, and get their own tables in
 a later step if benchmarks warrant. The table-driven product is proptest-
 verified bit-identical to the `blade_product` reference.
+
+## Appendix D — Phase 2 results: sparse sandwich
+
+`sandwich` (and therefore `Motor`/`Conformal::apply` and the typed
+`transform`s) now runs as two *sparse* geometric products that skip blade
+pairs with a zero coefficient on either side — exactly the all-zero blades
+that dominate a sandwich's operands (an even-grade versor is half zeros; a
+point/line/plane is a single grade). It is correct by construction (a zero
+coefficient contributes a `0` term either way) and proptest-verified equal to
+the `self * x * ~self` product form.
+
+| Benchmark                      | Baseline | Phase 1  | Phase 2  | Total   |
+|--------------------------------|----------|----------|----------|---------|
+| `Motor::apply` point (PGA)     | ~648 ns  | ~125 ns  | ~78 ns   | **8.3×**  |
+| `Conformal::apply` point (CGA) | ~5.0 µs  | ~478 ns  | ~375 ns  | **13.3×** |
+
+The plain product `*` stays dense (its per-pair zero test would only slow the
+dense workloads it is tuned for); only the sandwich opts into sparsity. The
+hot path is now ~8–13× over the original baseline — comfortably past the
+numpy figure that motivated this RFC. Remaining phases (3: batch/SoA apply,
+4: stable `wide` SIMD) are optional, to be driven by an end-to-end VIGA
+re-measurement.

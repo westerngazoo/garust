@@ -14,7 +14,7 @@
 //! and any product of vectors. It excludes things like `1 + e1`, whose
 //! reverse-product `(1+e1)(1+e1) = 2 + 2e1` is not a scalar.
 
-use crate::algebra::Algebra;
+use crate::algebra::{Algebra, BladeStore};
 use crate::multivector::Multivector;
 use crate::scalar::{max, Real, Scalar};
 
@@ -64,8 +64,44 @@ impl<A: Algebra, T: Scalar> Multivector<A, T> {
     /// "true" conjugation `self · x · self⁻¹` by a positive scalar
     /// factor. If you need the precise conjugation, compose with
     /// [`Multivector::versor_inverse`] explicitly.
+    ///
+    /// Computed as two *sparse* geometric products, so it skips the all-zero
+    /// blades that dominate a sandwich's operands — an even-grade versor
+    /// (half its blades zero) and a single-grade object (a point, line, or
+    /// plane is mostly zero). The result is identical to `self * x * ~self`;
+    /// only the wasted multiplies are gone.
     pub fn sandwich(&self, x: &Self) -> Self {
-        *self * *x * self.reverse()
+        let rev = self.reverse();
+        self.sparse_product(x).sparse_product(&rev)
+    }
+
+    /// Geometric product that skips blade pairs with a zero coefficient on
+    /// either side. Bit-identical to `*` (a zero coefficient contributes a
+    /// `0` term either way), but for the graded, mostly-zero operands of a
+    /// sandwich it does far less work. `*` itself stays dense — the per-pair
+    /// zero test would only slow the dense case it is tuned for.
+    fn sparse_product(&self, rhs: &Self) -> Self {
+        let mut out = Self::zero();
+        let table = A::CAYLEY;
+        for (i, &ca) in self.coeffs.as_slice().iter().enumerate() {
+            if ca == T::ZERO {
+                continue;
+            }
+            let row = i * A::DIM;
+            for (j, &cb) in rhs.coeffs.as_slice().iter().enumerate() {
+                if cb == T::ZERO {
+                    continue;
+                }
+                let (idx, sign) = table[row + j];
+                let term = ca * cb;
+                if sign > 0 {
+                    out.coeffs[idx as usize] += term;
+                } else if sign < 0 {
+                    out.coeffs[idx as usize] -= term;
+                }
+            }
+        }
+        out
     }
 }
 

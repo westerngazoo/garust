@@ -91,6 +91,13 @@ macro_rules! algebra_laws {
                     prop_assert_eq!(a * b, reference_product(&a, &b));
                 }
 
+                // The sparse sandwich equals the plain product form
+                // `a · b · ~a` exactly — skipping zero terms changes nothing.
+                #[test]
+                fn sandwich_matches_product_form(a in $mv, b in $mv) {
+                    prop_assert_eq!(a.sandwich(&b), (a * b) * a.reverse());
+                }
+
                 // a (b + c) = a b + a c, and the right-hand analogue.
                 #[test]
                 fn geometric_product_distributes_over_addition(a in $mv, b in $mv, c in $mv) {
