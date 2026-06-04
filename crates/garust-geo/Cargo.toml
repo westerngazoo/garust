@@ -17,10 +17,15 @@ derive = ["garust-core/derive"]
 # newtypes). Forwards to `garust-core/serde` so the underlying `Multivector`
 # is (de)serializable, and pulls in `serde` for the derives here.
 serde = ["dep:serde", "garust-core/serde"]
+# Opt-in bytemuck for the typed objects. Forwards to `garust-core/bytemuck`
+# so the underlying `Multivector` is `Pod`/`Zeroable`, and pulls in
+# `bytemuck` for the newtype impls here.
+bytemuck = ["dep:bytemuck", "garust-core/bytemuck"]
 
 [dependencies]
 garust-core = { workspace = true }
 serde = { workspace = true, optional = true }
+bytemuck = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

@@ -31,6 +31,9 @@
 //! - `serde` — `Serialize` / `Deserialize` for [`Multivector`], as a flat
 //!   sequence of its blade coefficients (works for every signature, not
 //!   just those small enough for serde's array impls).
+//! - `bytemuck` — `Pod` / `Zeroable` for [`Multivector`] (which is
+//!   `#[repr(transparent)]` over its coefficient array), for zero-copy
+//!   reinterpretation as raw bytes or flat scalars.
 
 #![deny(missing_docs)]
 
@@ -50,6 +53,11 @@ pub mod transform;
 // regardless of the module's visibility.
 #[cfg(feature = "serde")]
 mod serde_impls;
+
+// `Pod`/`Zeroable` for `Multivector`, behind the `bytemuck` feature. Also a
+// private impl-only module (see the comment on `serde_impls`).
+#[cfg(feature = "bytemuck")]
+mod bytemuck_impls;
 
 pub use algebra::{Algebra, BladeStore};
 pub use multivector::Multivector;

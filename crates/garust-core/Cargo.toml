@@ -16,10 +16,14 @@ derive = ["dep:garust-derive"]
 # Opt-in `serde::{Serialize, Deserialize}` for `Multivector`. Off by default
 # so the crate stays zero-dep; enabling it pulls in `serde`.
 serde = ["dep:serde"]
+# Opt-in `bytemuck::{Pod, Zeroable}` for `Multivector`, for zero-copy GPU
+# uploads. Off by default; enabling it pulls in `bytemuck`.
+bytemuck = ["dep:bytemuck"]
 
 [dependencies]
 garust-derive = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
+bytemuck = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

@@ -109,6 +109,10 @@
 //!   blade coefficients; the typed objects ([`Motor`], [`Conformal`], the
 //!   [`pga`]/[`cga`] newtypes) are `#[serde(transparent)]`, so each rides
 //!   on that same bare-array form.
+//! - `bytemuck` — `Pod` / `Zeroable` for every type. Each is
+//!   `#[repr(transparent)]` over its coefficient array, so a
+//!   `&[Multivector<A, T>]` (or a slice of points, motors, …) reinterprets
+//!   as a flat `&[T]` / `&[u8]` with no copy — ready for a GPU buffer.
 
 #![deny(missing_docs)]
 

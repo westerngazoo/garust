@@ -118,3 +118,36 @@ mod serde_tests {
         assert_eq!(back, s);
     }
 }
+
+// Each typed object is `#[repr(transparent)]` over its multivector, so under
+// the `bytemuck` feature it is `Pod` and a slice of them reinterprets as a
+// flat scalar buffer — the shape a GPU upload wants.
+#[cfg(all(test, feature = "bytemuck"))]
+mod bytemuck_tests {
+    use crate::{cga, pga, Motor};
+    use garust_core::Pga3;
+
+    #[test]
+    fn motor_round_trips_through_bytes() {
+        let m = Motor::translator(1.0, 2.0, 3.0) * Motor::rotor(0.7, Pga3::basis(0b0110));
+        let bytes = bytemuck::bytes_of(&m);
+        let back: Motor<f64> = *bytemuck::from_bytes(bytes);
+        assert_eq!(back, m);
+    }
+
+    #[test]
+    fn object_buffers_cast_to_flat_scalars() {
+        // A PGA point cloud views as a flat f64 buffer — 16 scalars per point.
+        let points = [
+            pga::Point::new(1.0, 2.0, 3.0),
+            pga::Point::new(4.0, 5.0, 6.0),
+        ];
+        let flat: &[f64] = bytemuck::cast_slice(&points);
+        assert_eq!(flat.len(), 32);
+
+        // CGA objects are 32-wide; confirm the larger signature casts too.
+        let spheres = [cga::Sphere::new(0.0, 0.0, 0.0, 1.0)];
+        let flat: &[f64] = bytemuck::cast_slice(&spheres);
+        assert_eq!(flat.len(), 32);
+    }
+}

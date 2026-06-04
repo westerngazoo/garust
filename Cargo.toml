@@ -20,6 +20,9 @@ derive = ["garust-core/derive"]
 # Opt-in serde for every type, forwarded to both member crates. Off by
 # default so the umbrella crate stays dependency-free.
 serde = ["garust-core/serde", "garust-geo/serde"]
+# Opt-in bytemuck (Pod/Zeroable) for every type, forwarded to both member
+# crates. Off by default so the umbrella crate stays dependency-free.
+bytemuck = ["garust-core/bytemuck", "garust-geo/bytemuck"]
 
 [dependencies]
 garust-core = { workspace = true }
@@ -59,3 +62,8 @@ proptest = "1"
 serde = { version = "1", default-features = false, features = ["derive"] }
 # JSON — a dev-dependency only, for the serde round-trip tests.
 serde_json = "1"
+
+# Optional zero-copy plain-old-data casts, behind each crate's `bytemuck`
+# feature and off by default. `default-features = false` keeps it no_std-ready
+# and out of the normal dependency graph for the default build.
+bytemuck = { version = "1", default-features = false }

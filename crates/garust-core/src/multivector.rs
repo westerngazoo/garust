@@ -22,6 +22,13 @@ use crate::signature::blade_product;
 /// inconsistently. The type aliases in [`crate`] (`Vga2`, `Vga3`, `Pga3`,
 /// …) name the common signatures so end users rarely write the generic
 /// form.
+///
+/// The type is `#[repr(transparent)]` over its `coeffs` field, so under the
+/// optional `bytemuck` feature a `Multivector` is plain-old-data
+/// (`Pod`/`Zeroable`) whenever the scalar `T` is — letting a
+/// `&[Multivector<A, T>]` be reinterpreted as a flat scalar (or byte)
+/// buffer with no copy, e.g. for upload to the GPU.
+#[repr(transparent)]
 pub struct Multivector<A: Algebra, T: Scalar> {
     /// Coefficient of each basis blade, indexed by the bitmask convention
     /// in [`crate::signature`]. `coeffs[0]` is always the scalar part.
