@@ -102,6 +102,35 @@ pub const fn blade_product(a: usize, b: usize, p: usize, q: usize) -> (usize, i3
     (result, sign)
 }
 
+/// One cell of a precomputed Cayley table: the `(target blade index, sign)`
+/// of a single basis-blade geometric product, with `sign ∈ {-1, 0, 1}`. The
+/// index is `u16`, so every signature up to `N = 16` (65 536 blades) fits.
+pub type CayleyEntry = (u16, i8);
+
+/// Build the geometric-product Cayley table for `Cl(p, q, r)` at compile
+/// time: a flat, row-major `dim × dim` array whose cell `[a * dim + b]` is
+/// [`blade_product`]`(a, b, p, q)` packed into a [`CayleyEntry`].
+///
+/// `dim` must be `2^(p + q + r)` and the const parameter `NN` must be
+/// `dim * dim`; [`define_algebra!`](crate::define_algebra) and the `Algebra`
+/// derive supply both from the signature literals. Materializing this once
+/// per algebra lets [`Multivector`](crate::Multivector)'s geometric product
+/// replace the per-pair [`blade_product`] call with a single table lookup.
+pub const fn cayley_table<const NN: usize>(dim: usize, p: usize, q: usize) -> [CayleyEntry; NN] {
+    let mut table = [(0u16, 0i8); NN];
+    let mut a = 0;
+    while a < dim {
+        let mut b = 0;
+        while b < dim {
+            let (idx, sign) = blade_product(a, b, p, q);
+            table[a * dim + b] = (idx as u16, sign as i8);
+            b += 1;
+        }
+        a += 1;
+    }
+    table
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

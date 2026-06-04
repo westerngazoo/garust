@@ -90,6 +90,15 @@ impl<T: Scalar> Conformal<T> {
         self.versor.sandwich(x)
     }
 
+    /// Apply the transformation to every object in `xs`, in place — the
+    /// batch form of [`Conformal::apply`] for transforming a whole point
+    /// cloud (or set of spheres/planes) by one versor. The versor is
+    /// reversed once and reused across the batch, so this is cheaper than
+    /// calling [`Conformal::apply`] in a loop, with identical results.
+    pub fn apply_each(&self, xs: &mut [Cga<T>]) {
+        self.versor.sandwich_each(xs);
+    }
+
     /// Compose two transformations: `self.compose(&rhs)` does `rhs`
     /// first, then `self`, like function composition. Equals `self * rhs`.
     pub fn compose(&self, rhs: &Self) -> Self {
@@ -110,6 +119,18 @@ impl<T: Scalar> Conformal<T> {
     /// so this is `1`.
     pub fn norm_squared(&self) -> T {
         self.versor.norm_squared()
+    }
+}
+
+#[cfg(feature = "simd")]
+impl Conformal<f64> {
+    /// SIMD batch apply: transform every CGA object in `xs` in place, four
+    /// objects per SIMD vector (structure-of-arrays). Behind the `simd`
+    /// feature; bit-faithful to [`Conformal::apply_each`] (the tail that
+    /// doesn't fill a vector uses the scalar path), with several times the
+    /// throughput for large point clouds.
+    pub fn apply_each_simd(&self, xs: &mut [Cga<f64>]) {
+        crate::simd::sandwich_each_cga(&self.versor, xs);
     }
 }
 

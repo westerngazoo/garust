@@ -33,6 +33,30 @@ fn grades_partition<A: Algebra>(m: Multivector<A, f64>) -> bool {
     recon == m
 }
 
+/// The geometric product computed straight from `blade_product` — the
+/// definitional reference the const-Cayley-table product must reproduce
+/// exactly (same blade-pair order ⇒ bit-identical accumulation).
+fn reference_product<A: Algebra>(
+    a: &Multivector<A, f64>,
+    b: &Multivector<A, f64>,
+) -> Multivector<A, f64> {
+    let mut out = Multivector::<A, f64>::zero();
+    for i in 0..A::DIM {
+        for j in 0..A::DIM {
+            let (idx, sign) = garust_core::signature::blade_product(i, j, A::P, A::Q);
+            if sign != 0 {
+                let term = a.coeffs[i] * b.coeffs[j];
+                if sign > 0 {
+                    out.coeffs[idx] += term;
+                } else {
+                    out.coeffs[idx] -= term;
+                }
+            }
+        }
+    }
+    out
+}
+
 /// A dense random `Vga3` (`Cl(3,0,0)`) — all 8 coefficients drawn from
 /// `[-3, 3]`.
 fn any_vga3() -> impl Strategy<Value = Vga3> {
@@ -58,6 +82,20 @@ macro_rules! algebra_laws {
                 #[test]
                 fn geometric_product_is_associative(a in $mv, b in $mv, c in $mv) {
                     prop_assert!(close(&((a * b) * c), &(a * (b * c))));
+                }
+
+                // The const-Cayley-table product matches the blade_product
+                // reference exactly — the fast path is bit-faithful.
+                #[test]
+                fn geometric_product_matches_reference(a in $mv, b in $mv) {
+                    prop_assert_eq!(a * b, reference_product(&a, &b));
+                }
+
+                // The sparse sandwich equals the plain product form
+                // `a · b · ~a` exactly — skipping zero terms changes nothing.
+                #[test]
+                fn sandwich_matches_product_form(a in $mv, b in $mv) {
+                    prop_assert_eq!(a.sandwich(&b), (a * b) * a.reverse());
                 }
 
                 // a (b + c) = a b + a c, and the right-hand analogue.

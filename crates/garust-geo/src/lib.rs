@@ -30,6 +30,11 @@ pub mod conformal;
 pub mod motor;
 pub mod pga;
 
+// SoA SIMD batch transforms, behind the `simd` feature. Private: it only
+// backs the `apply_each_simd` methods on `Motor`/`Conformal`.
+#[cfg(feature = "simd")]
+mod simd;
+
 pub use conformal::Conformal;
 pub use motor::Motor;
 
@@ -153,5 +158,57 @@ mod bytemuck_tests {
         let spheres = [cga::Sphere::new(0.0, 0.0, 0.0, 1.0)];
         let flat: &[f64] = bytemuck::cast_slice(&spheres);
         assert_eq!(flat.len(), 32);
+    }
+}
+
+// The SoA SIMD batch transforms must match the scalar batch (the slow,
+// obviously-correct path) within floating-point tolerance — a non-multiple-
+// of-4 batch also exercises the scalar tail.
+#[cfg(all(test, feature = "simd"))]
+mod simd_tests {
+    use crate::{Conformal, Motor};
+    use garust_core::{Cga3, Pga3};
+    use std::f64::consts::TAU;
+
+    #[test]
+    fn motor_apply_each_simd_matches_scalar() {
+        let m = Motor::translator(1.0, -2.0, 0.5) * Motor::rotor(TAU / 8.0, Pga3::basis(0b0110));
+        // 10 points: two full SIMD chunks of 4 plus a remainder of 2.
+        let pts: Vec<_> = (0..10)
+            .map(|i| Pga3::point(i as f64, (i % 3) as f64 - 1.0, -(i as f64) * 0.5))
+            .collect();
+        let mut simd = pts.clone();
+        let mut scalar = pts;
+        m.apply_each_simd(&mut simd);
+        m.apply_each(&mut scalar);
+        for (a, b) in simd.iter().zip(scalar.iter()) {
+            for k in 0..16 {
+                assert!(
+                    (a.coeffs[k] - b.coeffs[k]).abs() < 1e-12,
+                    "coeff {k}: {} vs {}",
+                    a.coeffs[k],
+                    b.coeffs[k]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn conformal_apply_each_simd_matches_scalar() {
+        let v = Conformal::translator(1.0, 0.0, -2.0)
+            * Conformal::rotor(TAU / 8.0, Cga3::basis(0b0110))
+            * Conformal::dilator(1.5);
+        let pts: Vec<_> = (0..10)
+            .map(|i| Cga3::cga_point(i as f64 * 0.3, (i % 4) as f64, 1.0 - i as f64))
+            .collect();
+        let mut simd = pts.clone();
+        let mut scalar = pts;
+        v.apply_each_simd(&mut simd);
+        v.apply_each(&mut scalar);
+        for (a, b) in simd.iter().zip(scalar.iter()) {
+            for k in 0..32 {
+                assert!((a.coeffs[k] - b.coeffs[k]).abs() < 1e-12, "coeff {k}");
+            }
+        }
     }
 }

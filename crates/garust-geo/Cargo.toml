@@ -28,6 +28,9 @@ serde = ["dep:serde", "garust-core/serde"]
 # so the underlying `Multivector` is `Pod`/`Zeroable`, and pulls in
 # `bytemuck` for the newtype impls here.
 bytemuck = ["dep:bytemuck", "garust-core/bytemuck"]
+# Opt-in SIMD batch transforms (`Motor`/`Conformal::apply_each_simd`) via the
+# stable `wide` crate. Off by default.
+simd = ["dep:wide"]
 
 [dependencies]
 # Inherits `default-features = false` from `[workspace.dependencies]`, so this
@@ -35,6 +38,7 @@ bytemuck = ["dep:bytemuck", "garust-core/bytemuck"]
 garust-core = { workspace = true }
 serde = { workspace = true, optional = true }
 bytemuck = { workspace = true, optional = true }
+wide = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

@@ -130,6 +130,19 @@ pub trait Algebra: Copy + Debug {
     /// over the scalar `T`. For every concrete signature this resolves to
     /// a fixed-size `[T; 2^N]`.
     type Blades<T: Scalar>: BladeStore<T>;
+
+    /// Precomputed geometric-product Cayley table: a flat, row-major
+    /// `DIM × DIM` slice whose cell `[a * DIM + b]` is the
+    /// `(target index, sign)` of the basis-blade product `e_a · e_b` (see
+    /// [`CayleyEntry`](crate::signature::CayleyEntry)).
+    ///
+    /// [`Multivector`](crate::Multivector)'s geometric product indexes this
+    /// once per blade pair instead of recomputing
+    /// [`blade_product`](crate::signature::blade_product) in the hot loop.
+    /// It is generated for you by [`define_algebra!`](crate::define_algebra)
+    /// and the `Algebra` derive — a hand-written impl must supply it, e.g.
+    /// with [`cayley_table`](crate::signature::cayley_table).
+    const CAYLEY: &'static [crate::signature::CayleyEntry];
 }
 
 /// Define a Clifford-algebra marker type and its [`Algebra`] impl from a
@@ -158,6 +171,10 @@ macro_rules! define_algebra {
             const Q: usize = $q;
             const R: usize = $r;
             type Blades<T: $crate::scalar::Scalar> = [T; 1 << ($p + $q + $r)];
+            const CAYLEY: &'static [$crate::signature::CayleyEntry] =
+                &$crate::signature::cayley_table::<
+                    { (1usize << ($p + $q + $r)) * (1usize << ($p + $q + $r)) },
+                >(1usize << ($p + $q + $r), $p, $q);
         }
     };
 }
