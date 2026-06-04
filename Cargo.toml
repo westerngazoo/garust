@@ -67,6 +67,11 @@ proc-macro-crate = "3"
 # downstream consumers and the default build stay dependency-free.
 proptest = "1"
 
+# Benchmarking harness — a dev-dependency only, for the `benches/`. Never in
+# the normal dependency graph. `default-features = false` drops the optional
+# plotting/html-report stack we don't need in CI.
+criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
+
 # Optional (de)serialization, gated behind each crate's `serde` feature and
 # off by default — so it stays out of the normal dependency graph and the
 # default build remains dependency-free. `default-features = false` keeps it
