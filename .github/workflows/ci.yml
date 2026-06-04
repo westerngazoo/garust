@@ -72,3 +72,25 @@ jobs:
       #     so they never reach consumers and need not honour our MSRV.
       - name: Build on MSRV
         run: cargo build --workspace --exclude garust-derive --lib --examples
+
+  no_std:
+    name: no_std (bare-metal + libm)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust with a bare-metal target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: thumbv7em-none-eabi
+
+      # Build the libraries for a target that has no `std` at all: this fails
+      # if anything outside the `std` feature touches the standard library.
+      # `libm` supplies the float transcendentals in std's place, and the
+      # last build also confirms serde + bytemuck compose under no_std.
+      - name: Build core (no_std + libm)
+        run: cargo build -p garust-core --no-default-features --features libm --target thumbv7em-none-eabi
+      - name: Build geo (no_std + libm)
+        run: cargo build -p garust-geo --no-default-features --features libm --target thumbv7em-none-eabi
+      - name: Build umbrella (no_std + libm + serde + bytemuck)
+        run: cargo build -p garust --no-default-features --features "libm serde bytemuck" --target thumbv7em-none-eabi

@@ -10,6 +10,13 @@ keywords = ["geometric-algebra", "clifford-algebra", "math", "ga"]
 categories = ["mathematics"]
 
 [features]
+default = ["std"]
+# Use the standard library's float math (sqrt, sin, …). On by default; the
+# crate is otherwise `#![no_std]` and allocation-free. For no_std, set
+# `default-features = false` and enable `libm` instead.
+std = []
+# Provide the float transcendentals via the `libm` crate, for no_std builds.
+libm = ["dep:libm"]
 # Opt-in `#[derive(Algebra)]`. Off by default so the crate stays zero-dep;
 # enabling it pulls in the `garust-derive` proc-macro and its toolchain.
 derive = ["dep:garust-derive"]
@@ -24,6 +31,7 @@ bytemuck = ["dep:bytemuck"]
 garust-derive = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 bytemuck = { workspace = true, optional = true }
+libm = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

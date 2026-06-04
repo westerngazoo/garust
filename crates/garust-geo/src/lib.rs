@@ -19,6 +19,10 @@
 //! [`garust`](https://crates.io/crates/garust) crate, which re-exports this
 //! one alongside the core.
 
+// `no_std` by default (test builds get `std`). The typed layer calls only
+// `garust-core` and `core`, never the standard library directly, so the
+// `std` / `libm` features just forward to the kernel's math backend.
+#![cfg_attr(not(test), no_std)]
 #![deny(missing_docs)]
 
 pub mod cga;

@@ -10,6 +10,13 @@ keywords = ["geometric-algebra", "pga", "cga", "motor", "conformal"]
 categories = ["mathematics"]
 
 [features]
+default = ["std"]
+# Standard-library float math, forwarded to the kernel. On by default; the
+# crate is otherwise `#![no_std]`. For no_std, use `default-features = false`
+# and enable `libm`.
+std = ["garust-core/std"]
+# `no_std` float math via `libm`, forwarded to the kernel.
+libm = ["garust-core/libm"]
 # Forwards to `garust-core/derive` so `#[derive(Algebra)]` is reachable for
 # consumers of this crate; also gates the cross-crate derive test.
 derive = ["garust-core/derive"]
@@ -23,6 +30,8 @@ serde = ["dep:serde", "garust-core/serde"]
 bytemuck = ["dep:bytemuck", "garust-core/bytemuck"]
 
 [dependencies]
+# Inherits `default-features = false` from `[workspace.dependencies]`, so this
+# crate's `std`/`libm` features choose the kernel's math backend.
 garust-core = { workspace = true }
 serde = { workspace = true, optional = true }
 bytemuck = { workspace = true, optional = true }

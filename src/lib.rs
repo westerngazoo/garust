@@ -99,8 +99,16 @@
 //!
 //! ## Cargo features
 //!
-//! All features are **off by default**, so the out-of-the-box build pulls
-//! in zero dependencies.
+//! - `std` *(default)* — use the standard library's float math. The crates
+//!   are otherwise `#![no_std]` and allocate nothing, so
+//!   `default-features = false` yields a `no_std`, allocator-free build.
+//! - `libm` — supply the float transcendentals via the
+//!   [`libm`](https://crates.io/crates/libm) crate for `no_std` use. Enable
+//!   one of `std` / `libm` to use `f32`/`f64` (a custom [`Scalar`] needs
+//!   neither).
+//!
+//! The remaining features are off by default, so the out-of-the-box build
+//! beyond `std` pulls in zero dependencies:
 //!
 //! - `derive` — the `#[derive(Algebra)]` proc-macro (pulls in a
 //!   `syn`/`quote` toolchain).
@@ -114,6 +122,10 @@
 //!   `&[Multivector<A, T>]` (or a slice of points, motors, …) reinterprets
 //!   as a flat `&[T]` / `&[u8]` with no copy — ready for a GPU buffer.
 
+// `no_std` by default — the umbrella only re-exports its members, so it
+// inherits their `no_std`-ness. Enable `std` (default) or `libm` for
+// `f32`/`f64` math; both forward to the member crates.
+#![cfg_attr(not(test), no_std)]
 #![deny(missing_docs)]
 
 // --- Modules (re-exported so `garust::signature`, … keep resolving) ------

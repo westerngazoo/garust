@@ -14,6 +14,13 @@ categories = ["mathematics"]
 name = "garust"
 
 [features]
+default = ["std"]
+# Standard-library float math, forwarded to both members. On by default; the
+# crates are otherwise `#![no_std]`. For no_std, use `default-features =
+# false` and enable `libm`.
+std = ["garust-core/std", "garust-geo/std"]
+# `no_std` float math via `libm`, forwarded to both members.
+libm = ["garust-core/libm", "garust-geo/libm"]
 # Opt-in `#[derive(Algebra)]`, forwarded to garust-core. Off by default so
 # the umbrella crate stays dependency-free unless you ask for the derive.
 derive = ["garust-core/derive"]
@@ -25,6 +32,8 @@ serde = ["garust-core/serde", "garust-geo/serde"]
 bytemuck = ["garust-core/bytemuck", "garust-geo/bytemuck"]
 
 [dependencies]
+# Inherit `default-features = false` from `[workspace.dependencies]`, so the
+# umbrella's `std`/`libm` features choose the members' math backend.
 garust-core = { workspace = true }
 garust-geo = { workspace = true }
 
@@ -38,9 +47,12 @@ rust-version = "1.79"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/westerngazoo/garust"
 
+# `default-features = false` here (not at the member level, where it would be
+# ignored for an inherited dep) so each crate's own `std`/`libm` feature picks
+# the math backend rather than always pulling in core's default `std`.
 [workspace.dependencies]
-garust-core = { version = "0.1.0", path = "crates/garust-core" }
-garust-geo = { version = "0.1.0", path = "crates/garust-geo" }
+garust-core = { version = "0.1.0", path = "crates/garust-core", default-features = false }
+garust-geo = { version = "0.1.0", path = "crates/garust-geo", default-features = false }
 garust-derive = { version = "0.1.0", path = "crates/garust-derive" }
 
 # Proc-macro toolchain — pulled in only when the optional `derive` feature
@@ -67,3 +79,7 @@ serde_json = "1"
 # feature and off by default. `default-features = false` keeps it no_std-ready
 # and out of the normal dependency graph for the default build.
 bytemuck = { version = "1", default-features = false }
+
+# Pure-Rust float math for `no_std` builds, behind the `libm` feature (an
+# alternative to the default `std` math backend). Itself dependency-free.
+libm = "0.2"
