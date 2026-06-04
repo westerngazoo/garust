@@ -5,7 +5,6 @@ use core::ops::{Add, AddAssign, Mul, Neg, Sub, SubAssign};
 
 use crate::algebra::{Algebra, BladeStore};
 use crate::scalar::Scalar;
-use crate::signature::blade_product;
 
 /// A multivector in the Clifford algebra `A`, with coefficients of type
 /// `T`.
@@ -187,27 +186,34 @@ impl<A: Algebra, T: Scalar> Neg for Multivector<A, T> {
 //
 //     (Σ aᵢ Eᵢ) * (Σ bⱼ Eⱼ) = Σᵢⱼ aᵢ bⱼ (Eᵢ * Eⱼ)
 //
-// and each single-blade product `Eᵢ * Eⱼ` is computed in one shot by
-// `signature::blade_product` (target index = `i XOR j`, sign comes from
-// blade-reordering parity times the metric of every shared generator).
+// Each single-blade product `Eᵢ * Eⱼ` (target index = `i XOR j`, sign from
+// blade-reordering parity times the metric of the shared generators) is read
+// straight from the signature's precomputed Cayley table `A::CAYLEY` —
+// generated once at compile time by `define_algebra!` from
+// `signature::blade_product`, so the hot loop never recomputes it.
 //
-// Cost: `O(DIM²)` per multiplication — fine for the algebras a human
-// would write by hand (≤ 1024 ops for `Cga3`).
+// Cost: still `O(DIM²)` per multiplication, but each blade pair is one table
+// lookup, not a popcount/parity computation. The outer `ca == 0` skip turns
+// sparse operands (e.g. a graded blade) into far less work.
 
 impl<A: Algebra, T: Scalar> Mul for Multivector<A, T> {
     type Output = Self;
     fn mul(self, rhs: Self) -> Self {
         let mut out = Self::zero();
-        for a in 0..A::DIM {
-            for b in 0..A::DIM {
-                let (idx, sign) = blade_product(a, b, A::P, A::Q);
-                if sign != 0 {
-                    let term = self.coeffs[a] * rhs.coeffs[b];
-                    if sign > 0 {
-                        out.coeffs[idx] += term;
-                    } else {
-                        out.coeffs[idx] -= term;
-                    }
+        let table = A::CAYLEY;
+        for i in 0..A::DIM {
+            let ca = self.coeffs[i];
+            if ca == T::ZERO {
+                continue;
+            }
+            let row = i * A::DIM;
+            for j in 0..A::DIM {
+                let (idx, sign) = table[row + j];
+                let term = ca * rhs.coeffs[j];
+                if sign > 0 {
+                    out.coeffs[idx as usize] += term;
+                } else if sign < 0 {
+                    out.coeffs[idx as usize] -= term;
                 }
             }
         }
