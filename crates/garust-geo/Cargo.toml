@@ -13,9 +13,15 @@ categories = ["mathematics"]
 # Forwards to `garust-core/derive` so `#[derive(Algebra)]` is reachable for
 # consumers of this crate; also gates the cross-crate derive test.
 derive = ["garust-core/derive"]
+# Opt-in serde for the typed objects (Motor, Conformal, and the pga/cga
+# newtypes). Forwards to `garust-core/serde` so the underlying `Multivector`
+# is (de)serializable, and pulls in `serde` for the derives here.
+serde = ["dep:serde", "garust-core/serde"]
 
 [dependencies]
 garust-core = { workspace = true }
+serde = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
+serde_json = { workspace = true }

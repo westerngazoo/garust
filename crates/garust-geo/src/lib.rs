@@ -78,3 +78,43 @@ mod derive_tests {
         assert_eq!(<Euclidean2 as Algebra>::DIM, 4);
     }
 }
+
+// The typed objects are `#[serde(transparent)]` newtypes, so each (de)
+// serializes exactly as its underlying multivector — a bare coefficient
+// array. These round-trips confirm the geometry layer rides on the kernel's
+// `serde` impls cleanly across PGA and CGA.
+#[cfg(all(test, feature = "serde"))]
+mod serde_tests {
+    use crate::{cga, pga, Conformal, Motor};
+    use garust_core::Pga3;
+    use std::f64::consts::TAU;
+
+    #[test]
+    fn motor_round_trips_through_json() {
+        let m = Motor::translator(1.0, 2.0, 3.0) * Motor::rotor(TAU / 4.0, Pga3::basis(0b0110));
+        let json = serde_json::to_string(&m).unwrap();
+        // Transparent: a motor is its bare versor (a flat array, not an object).
+        assert!(json.starts_with('['));
+        let back: Motor<f64> = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, m);
+    }
+
+    #[test]
+    fn conformal_round_trips_through_json() {
+        let c = Conformal::translator(1.0, 0.0, -2.0) * Conformal::dilator(2.0);
+        let back: Conformal<f64> =
+            serde_json::from_str(&serde_json::to_string(&c).unwrap()).unwrap();
+        assert_eq!(back, c);
+    }
+
+    #[test]
+    fn typed_pga_and_cga_objects_round_trip() {
+        let p: pga::Point = pga::Point::new(1.0, 2.0, 3.0);
+        let back: pga::Point = serde_json::from_str(&serde_json::to_string(&p).unwrap()).unwrap();
+        assert_eq!(back, p);
+
+        let s: cga::Sphere = cga::Sphere::new(0.0, 0.0, 0.0, 1.0);
+        let back: cga::Sphere = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
+        assert_eq!(back, s);
+    }
+}

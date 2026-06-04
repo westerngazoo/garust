@@ -96,6 +96,19 @@
 //! This crate re-exports everything from both, so `use garust::…` is
 //! unchanged; reach past it to a member crate only when you want the
 //! kernel without the geometry (or vice versa).
+//!
+//! ## Cargo features
+//!
+//! All features are **off by default**, so the out-of-the-box build pulls
+//! in zero dependencies.
+//!
+//! - `derive` — the `#[derive(Algebra)]` proc-macro (pulls in a
+//!   `syn`/`quote` toolchain).
+//! - `serde` — [`serde`](https://serde.rs) `Serialize` / `Deserialize` for
+//!   every type. A [`Multivector`] (de)serializes as a flat array of its
+//!   blade coefficients; the typed objects ([`Motor`], [`Conformal`], the
+//!   [`pga`]/[`cga`] newtypes) are `#[serde(transparent)]`, so each rides
+//!   on that same bare-array form.
 
 #![deny(missing_docs)]
 

@@ -40,6 +40,11 @@ type Cga<T> = Multivector<Cga3Sig, T>;
 /// [`Conformal::rotor`], or [`Conformal::dilator`]; compose with `*` (or
 /// [`Conformal::compose`]); and move geometry with [`Conformal::apply`].
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(transparent)
+)]
 pub struct Conformal<T: Scalar> {
     versor: Cga<T>,
 }

@@ -22,6 +22,15 @@
 //! users depend on the umbrella [`garust`](https://crates.io/crates/garust)
 //! crate, which re-exports both; reach for `garust-core` directly only when
 //! you want the algebra without the geometry.
+//!
+//! # Cargo features
+//!
+//! Both are off by default, keeping the crate dependency-free:
+//!
+//! - `derive` — the `#[derive(Algebra)]` proc-macro.
+//! - `serde` — `Serialize` / `Deserialize` for [`Multivector`], as a flat
+//!   sequence of its blade coefficients (works for every signature, not
+//!   just those small enough for serde's array impls).
 
 #![deny(missing_docs)]
 
@@ -35,6 +44,12 @@ pub mod products;
 pub mod scalar;
 pub mod signature;
 pub mod transform;
+
+// `Serialize`/`Deserialize` for `Multivector`, behind the `serde` feature.
+// A private module: it adds only trait impls, which are visible crate-wide
+// regardless of the module's visibility.
+#[cfg(feature = "serde")]
+mod serde_impls;
 
 pub use algebra::{Algebra, BladeStore};
 pub use multivector::Multivector;

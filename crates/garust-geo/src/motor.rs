@@ -32,6 +32,11 @@ type Pga<T> = Multivector<Pga3Sig, T>;
 /// [`Motor::rotor`]; compose with `*` (or [`Motor::compose`]); and move
 /// geometry with [`Motor::apply`].
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(transparent)
+)]
 pub struct Motor<T: Scalar> {
     versor: Pga<T>,
 }

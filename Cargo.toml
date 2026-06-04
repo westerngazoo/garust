@@ -17,6 +17,9 @@ name = "garust"
 # Opt-in `#[derive(Algebra)]`, forwarded to garust-core. Off by default so
 # the umbrella crate stays dependency-free unless you ask for the derive.
 derive = ["garust-core/derive"]
+# Opt-in serde for every type, forwarded to both member crates. Off by
+# default so the umbrella crate stays dependency-free.
+serde = ["garust-core/serde", "garust-geo/serde"]
 
 [dependencies]
 garust-core = { workspace = true }
@@ -48,3 +51,11 @@ proc-macro-crate = "3"
 # [dev-dependencies]): it never enters the normal dependency graph, so
 # downstream consumers and the default build stay dependency-free.
 proptest = "1"
+
+# Optional (de)serialization, gated behind each crate's `serde` feature and
+# off by default — so it stays out of the normal dependency graph and the
+# default build remains dependency-free. `default-features = false` keeps it
+# no_std-ready for the planned alloc/libm split.
+serde = { version = "1", default-features = false, features = ["derive"] }
+# JSON — a dev-dependency only, for the serde round-trip tests.
+serde_json = "1"
