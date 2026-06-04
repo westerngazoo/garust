@@ -63,7 +63,11 @@ pub const fn swap_sign(a: usize, b: usize) -> i32 {
         inversions += (a & b).count_ones();
         a >>= 1;
     }
-    if inversions & 1 == 0 { 1 } else { -1 }
+    if inversions & 1 == 0 {
+        1
+    } else {
+        -1
+    }
 }
 
 /// Geometric product of two basis blades in `Cl(P, Q, R)`.

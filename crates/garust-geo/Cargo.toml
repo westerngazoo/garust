@@ -1,0 +1,27 @@
+[package]
+name = "garust-geo"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Typed geometry for garust: rigid-body Motors (PGA) and Conformal versors (CGA) over the garust-core algebra."
+license.workspace = true
+repository.workspace = true
+keywords = ["geometric-algebra", "pga", "cga", "motor", "conformal"]
+categories = ["mathematics"]
+
+[features]
+# Forwards to `garust-core/derive` so `#[derive(Algebra)]` is reachable for
+# consumers of this crate; also gates the cross-crate derive test.
+derive = ["garust-core/derive"]
+# Opt-in serde for the typed objects (Motor, Conformal, and the pga/cga
+# newtypes). Forwards to `garust-core/serde` so the underlying `Multivector`
+# is (de)serializable, and pulls in `serde` for the derives here.
+serde = ["dep:serde", "garust-core/serde"]
+
+[dependencies]
+garust-core = { workspace = true }
+serde = { workspace = true, optional = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+serde_json = { workspace = true }

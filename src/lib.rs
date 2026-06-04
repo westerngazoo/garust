@@ -47,15 +47,23 @@
 //! assert_eq!((w * w).scalar_part(), 2.0_f32);
 //! ```
 //!
-//! For a custom scalar type `S`, name the full generic form:
-//! `Multivector::<S, 3, 0, 0, 8>`.
+//! For a custom scalar type `S`, name the full generic form with the
+//! signature marker: `Multivector::<Vga3Sig, S>`. Mint a marker for a
+//! brand-new signature with [`define_algebra!`] — or, under the optional
+//! `derive` feature, by writing the marker yourself and adding
+//! `#[derive(Algebra)]` with an `#[algebra(p = …, q = …, r = …)]` attribute.
 //!
 //! ## What's implemented
 //!
+//! - [`Algebra`] — signatures reified as zero-sized marker types, so a
+//!   multivector is `Multivector<A, T>` (no redundant `DIM` parameter);
+//!   mint your own with [`define_algebra!`] (or, under the optional
+//!   `derive` feature, `#[derive(Algebra)]`)
 //! - [`Multivector`] — dense `[T; 2^N]` element type
 //! - linear ops: add, sub, neg, scalar multiplication, equality
 //! - the geometric product, plus wedge `∧`, inner `·`, scalar product
 //! - grade projection, reverse, grade involution, Clifford conjugation
+//! - `norm_squared`, the magnitude `norm`, and `normalized`
 //! - versor inverse, the sandwich product, and a closed-form `exp`
 //! - the pseudoscalar, metric-independent complements, and the
 //!   regressive product `∨` (the *meet*, dual to the wedge's *join*)
@@ -63,44 +71,72 @@
 //!   `line_through`, with meet/join doing real incidence geometry
 //! - [`Motor`] — rigid-body motions in PGA (rotors, translators, and
 //!   their screw-motion compositions)
+//! - typed PGA geometry in [`pga`]: [`pga::Point`], [`pga::Line`],
+//!   [`pga::Plane`] with type-checked join/meet incidence
+//!   (`a.meet(&b).meet(&c)`, `a.join(&b).join(&c)`)
+//! - CGA geometric constructors for `Cl(4,1,0)`: `cga_point`, `sphere`,
+//!   `cga_plane`, on the null-cone conformal model
+//! - [`Conformal`] — conformal transformations in CGA (translators,
+//!   rotors, and dilations about the origin)
+//! - typed CGA geometry in [`cga`]: [`cga::Point`], [`cga::Sphere`],
+//!   [`cga::Plane`] with type-checked incidence (point-on-sphere/plane)
+//!
+//! ## Crate layout
+//!
+//! `garust` is a thin umbrella over a small workspace, so a larger
+//! project — a graph database, a physics engine, an experimental-algebra
+//! sandbox — can depend on exactly the layer it needs:
+//!
+//! - [`garust_core`] — the signature-generic kernel: [`Algebra`] and
+//!   [`define_algebra!`], [`Multivector`], the products and involutions,
+//!   duality, and the *raw* PGA/CGA constructors.
+//! - [`garust_geo`] — the *typed* geometry layer built on the kernel:
+//!   [`Motor`], [`Conformal`], and the typed [`pga`] and [`cga`] objects.
+//!
+//! This crate re-exports everything from both, so `use garust::…` is
+//! unchanged; reach past it to a member crate only when you want the
+//! kernel without the geometry (or vice versa).
+//!
+//! ## Cargo features
+//!
+//! All features are **off by default**, so the out-of-the-box build pulls
+//! in zero dependencies.
+//!
+//! - `derive` — the `#[derive(Algebra)]` proc-macro (pulls in a
+//!   `syn`/`quote` toolchain).
+//! - `serde` — [`serde`](https://serde.rs) `Serialize` / `Deserialize` for
+//!   every type. A [`Multivector`] (de)serializes as a flat array of its
+//!   blade coefficients; the typed objects ([`Motor`], [`Conformal`], the
+//!   [`pga`]/[`cga`] newtypes) are `#[serde(transparent)]`, so each rides
+//!   on that same bare-array form.
 
-pub mod dual;
-pub mod involutions;
-pub mod motor;
-pub mod multivector;
-pub mod pga;
-pub mod products;
-pub mod scalar;
-pub mod signature;
-pub mod transform;
+#![deny(missing_docs)]
 
-pub use motor::Motor;
-pub use multivector::Multivector;
-pub use scalar::{Real, Scalar};
+// --- Modules (re-exported so `garust::signature`, … keep resolving) ------
+#[doc(no_inline)]
+pub use garust_core::{
+    algebra, dual, involutions, multivector, products, scalar, signature, transform,
+};
+// `pga` and `cga` come from the geometry layer: each bundles that model's
+// typed objects (Point/Line/Plane, Point/Sphere/Plane), and `pga` also
+// re-exports the kernel's PGA-aware Display adapter.
+#[doc(no_inline)]
+pub use garust_geo::{cga, conformal, motor, pga};
 
-/// 2D Euclidean Geometric Algebra `Cl(2, 0, 0)` over `f64` — 4 blades.
-pub type Vga2 = Multivector<f64, 2, 0, 0, 4>;
-/// 3D Euclidean Geometric Algebra `Cl(3, 0, 0)` over `f64` — 8 blades.
-pub type Vga3 = Multivector<f64, 3, 0, 0, 8>;
-/// 3D Projective Geometric Algebra `Cl(3, 0, 1)` over `f64` — 16 blades.
-pub type Pga3 = Multivector<f64, 3, 0, 1, 16>;
-/// 3D Conformal Geometric Algebra `Cl(4, 1, 0)` over `f64` — 32 blades.
-pub type Cga3 = Multivector<f64, 4, 1, 0, 32>;
-/// Spacetime Algebra `Cl(1, 3, 0)` over `f64` — 16 blades, `(+, −, −, −)`.
-pub type Sta = Multivector<f64, 1, 3, 0, 16>;
+// --- The kernel: traits, the multivector, signatures, and aliases --------
+#[doc(inline)]
+pub use garust_core::{
+    Algebra, BladeStore, Cga3, Cga3Sig, Cga3f, Multivector, Pga3, Pga3Sig, Pga3f, Real, Scalar,
+    Sta, StaSig, Staf, Vga2, Vga2Sig, Vga2f, Vga3, Vga3Sig, Vga3f,
+};
 
-/// 2D Euclidean Geometric Algebra `Cl(2, 0, 0)` over `f32` — 4 blades.
-pub type Vga2f = Multivector<f32, 2, 0, 0, 4>;
-/// 3D Euclidean Geometric Algebra `Cl(3, 0, 0)` over `f32` — 8 blades.
-pub type Vga3f = Multivector<f32, 3, 0, 0, 8>;
-/// 3D Projective Geometric Algebra `Cl(3, 0, 1)` over `f32` — 16 blades.
-pub type Pga3f = Multivector<f32, 3, 0, 1, 16>;
-/// 3D Conformal Geometric Algebra `Cl(4, 1, 0)` over `f32` — 32 blades.
-pub type Cga3f = Multivector<f32, 4, 1, 0, 32>;
-/// Spacetime Algebra `Cl(1, 3, 0)` over `f32` — 16 blades, `(+, −, −, −)`.
-pub type Staf = Multivector<f32, 1, 3, 0, 16>;
+// --- The typed geometry layer --------------------------------------------
+#[doc(inline)]
+pub use garust_geo::{Conformal, Conformal3, Conformal3f, Motor, Motor3, Motor3f};
 
-/// A rigid-body [`Motor`] in 3D PGA over `f64`.
-pub type Motor3 = Motor<f64>;
-/// A rigid-body [`Motor`] in 3D PGA over `f32`.
-pub type Motor3f = Motor<f32>;
+// The signature-minting macro. `#[macro_export]` puts it at the
+// `garust_core` root; re-export it so downstream crates can write
+// `garust::define_algebra!` (the macro's `$crate` paths still resolve
+// through the dependency graph).
+#[doc(inline)]
+pub use garust_core::define_algebra;

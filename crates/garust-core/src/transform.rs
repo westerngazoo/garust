@@ -14,12 +14,11 @@
 //! and any product of vectors. It excludes things like `1 + e1`, whose
 //! reverse-product `(1+e1)(1+e1) = 2 + 2e1` is not a scalar.
 
+use crate::algebra::Algebra;
 use crate::multivector::Multivector;
 use crate::scalar::{max, Real, Scalar};
 
-impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize>
-    Multivector<T, P, Q, R, DIM>
-{
+impl<A: Algebra, T: Scalar> Multivector<A, T> {
     /// Inverse `M⁻¹ = ~M / ⟨M ~M⟩_0`, defined for versors.
     ///
     /// A multivector is a versor iff `M * ~M` is a pure scalar (after
@@ -30,7 +29,7 @@ impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize
         let prod = *self * self.reverse();
         let scalar = prod.scalar_part();
         let tol = T::from_f64(1e-10) * max(scalar.abs(), T::ONE);
-        for i in 1..DIM {
+        for i in 1..A::DIM {
             if prod.coeffs[i].abs() > tol {
                 return None;
             }
@@ -70,9 +69,7 @@ impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize
     }
 }
 
-impl<T: Real, const P: usize, const Q: usize, const R: usize, const DIM: usize>
-    Multivector<T, P, Q, R, DIM>
-{
+impl<A: Algebra, T: Real> Multivector<A, T> {
     /// Closed-form exponential `exp(self)` for an element whose square
     /// is a scalar.
     ///
@@ -102,7 +99,7 @@ impl<T: Real, const P: usize, const Q: usize, const R: usize, const DIM: usize>
             {
                 let scalar = sq.scalar_part();
                 let tol = T::from_f64(1e-9) * max(scalar.abs(), T::ONE);
-                (1..DIM).all(|i| sq.coeffs[i].abs() <= tol)
+                (1..A::DIM).all(|i| sq.coeffs[i].abs() <= tol)
             },
             "Multivector::exp: self² is not a scalar; the closed-form \
              formula only applies to elements with scalar square",
@@ -123,7 +120,7 @@ impl<T: Real, const P: usize, const Q: usize, const R: usize, const DIM: usize>
 #[cfg(test)]
 mod tests {
     use crate::{Vga2, Vga3};
-    use std::f64::consts::FRAC_PI_2;
+    use std::f64::consts::TAU;
 
     fn approx_eq(a: &[f64], b: &[f64], tol: f64) {
         assert_eq!(a.len(), b.len());
@@ -136,7 +133,9 @@ mod tests {
 
     #[test]
     fn vector_times_its_inverse_is_one() {
-        let v = Vga2 { coeffs: [0.0, 3.0, 4.0, 0.0] };
+        let v = Vga2 {
+            coeffs: [0.0, 3.0, 4.0, 0.0],
+        };
         let inv = v.versor_inverse();
         let prod = v * inv;
         approx_eq(&prod.coeffs, &Vga2::one().coeffs, 1e-12);
@@ -168,7 +167,7 @@ mod tests {
     #[test]
     fn rotor_90_in_e12_sends_e1_to_e2() {
         let e12 = Vga2::basis(3);
-        let r = (e12 * (-FRAC_PI_2 / 2.0)).exp();
+        let r = (e12 * (-TAU / 8.0)).exp();
         let rotated = r.sandwich(&Vga2::basis(1));
         approx_eq(&rotated.coeffs, &Vga2::basis(2).coeffs, 1e-12);
     }
@@ -176,7 +175,7 @@ mod tests {
     #[test]
     fn rotor_90_in_e12_sends_e2_to_minus_e1() {
         let e12 = Vga2::basis(3);
-        let r = (e12 * (-FRAC_PI_2 / 2.0)).exp();
+        let r = (e12 * (-TAU / 8.0)).exp();
         let rotated = r.sandwich(&Vga2::basis(2));
         approx_eq(&rotated.coeffs, &(-Vga2::basis(1)).coeffs, 1e-12);
     }
@@ -221,10 +220,10 @@ mod tests {
     }
 
     #[test]
-    fn exp_of_half_pi_e12_is_e12() {
-        // exp((π/2) e12) where e12² = -1
-        //   = cos(π/2) + sin(π/2) (e12 / 1) = e12
-        let b = Vga2::basis(3) * FRAC_PI_2;
+    fn exp_of_quarter_tau_e12_is_e12() {
+        // exp((τ/4) e12) where e12² = -1
+        //   = cos(τ/4) + sin(τ/4) (e12 / 1) = e12
+        let b = Vga2::basis(3) * (TAU / 4.0);
         approx_eq(&b.exp().coeffs, &Vga2::basis(3).coeffs, 1e-12);
     }
 
@@ -239,7 +238,8 @@ mod tests {
     fn exp_of_vector_in_p_group_uses_cosh_sinh() {
         // In Cl(1,0,0): e1² = +1, so exp(t e1) = cosh(t) + sinh(t) e1.
         use crate::Multivector;
-        type Cl10 = Multivector<f64, 1, 0, 0, 2>;
+        crate::define_algebra!(Cl100 = Cl(1, 0, 0));
+        type Cl10 = Multivector<Cl100, f64>;
         let t = 0.5;
         let v = Cl10 { coeffs: [0.0, t] };
         let e = v.exp();

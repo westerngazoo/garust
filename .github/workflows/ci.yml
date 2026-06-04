@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  test:
+    name: fmt · clippy · test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo registry and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml') }}
+
+      - name: Formatting
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Clippy (all features)
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Tests
+        run: cargo test --workspace --all-targets
+
+      - name: Tests (all features — exercises #[derive(Algebra)])
+        run: cargo test --workspace --all-targets --all-features
+
+      - name: Doc tests
+        run: cargo test --workspace --doc
+
+      - name: Docs (deny broken intra-doc links)
+        run: cargo doc --workspace --no-deps --all-features
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+  msrv:
+    name: minimum supported Rust (1.79)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust 1.79
+        uses: dtolnay/rust-toolchain@1.79
+
+      # The MSRV gate covers the *consumer surface* — the libraries and the
+      # facade's examples — which is the zero-dependency promise downstream
+      # users actually compile. It deliberately skips two things:
+      #   * garust-derive: the optional proc-macro pulls a heavier toolchain
+      #     (syn, proc-macro-crate) whose own MSRV need not bind the library.
+      #   * test targets (--lib --examples, not --all-targets): the proptest
+      #     dev-dependency is test-only tooling. Dev-deps are not transitive,
+      #     so they never reach consumers and need not honour our MSRV.
+      - name: Build on MSRV
+        run: cargo build --workspace --exclude garust-derive --lib --examples

@@ -68,6 +68,9 @@ pub trait Real: Scalar {
     fn sinh(self) -> Self;
     /// Hyperbolic cosine.
     fn cosh(self) -> Self;
+    /// Natural logarithm. Used to turn a scaling *factor* into the
+    /// log-scale that drives a conformal dilator.
+    fn ln(self) -> Self;
 }
 
 macro_rules! impl_scalar_real {
@@ -105,6 +108,10 @@ macro_rules! impl_scalar_real {
             #[inline]
             fn cosh(self) -> Self {
                 <$t>::cosh(self)
+            }
+            #[inline]
+            fn ln(self) -> Self {
+                <$t>::ln(self)
             }
         }
     };

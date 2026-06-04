@@ -3,48 +3,64 @@
 use core::fmt;
 use core::ops::{Add, AddAssign, Mul, Neg, Sub, SubAssign};
 
+use crate::algebra::{Algebra, BladeStore};
 use crate::scalar::Scalar;
 use crate::signature::blade_product;
 
-/// A multivector in the Clifford algebra `Cl(P, Q, R)` with coefficients
-/// of type `T`.
+/// A multivector in the Clifford algebra `A`, with coefficients of type
+/// `T`.
 ///
-/// - `T` = coefficient type (any [`Scalar`]; `f32`/`f64` provided)
-/// - `P` = number of basis vectors that square to `+1`
-/// - `Q` = number of basis vectors that square to `-1`
-/// - `R` = number of basis vectors that square to `0` (degenerate / null)
-/// - `DIM` = `2^(P+Q+R)`, the number of basis blades
+/// - `A` = the signature, a marker type implementing [`Algebra`]
+///   (`Vga3Sig`, `Pga3Sig`, …, or one minted with
+///   [`define_algebra!`](crate::define_algebra)). It pins `P`, `Q`, `R`
+///   and hence the blade count `DIM = 2^(P+Q+R)`.
+/// - `T` = coefficient type (any [`Scalar`]; `f32`/`f64` provided).
 ///
-/// `DIM` is a trailing const parameter only because stable Rust can't
-/// yet evaluate `1 << (P+Q+R)` in a const-generic array length position.
-/// A const assertion below catches any mismatch at compile time, and the
-/// type aliases in [`crate`] (`Vga2`, `Vga3`, `Pga3`, …) mean end users
-/// almost never need to type the redundant `DIM`.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Multivector<T, const P: usize, const Q: usize, const R: usize, const DIM: usize> {
+/// The coefficient storage is `A::Blades<T>` — a fixed `[T; 2^N]` array
+/// for every concrete signature. Tying the length to `A` rather than a
+/// separate const parameter means it can never be specified
+/// inconsistently. The type aliases in [`crate`] (`Vga2`, `Vga3`, `Pga3`,
+/// …) name the common signatures so end users rarely write the generic
+/// form.
+pub struct Multivector<A: Algebra, T: Scalar> {
     /// Coefficient of each basis blade, indexed by the bitmask convention
     /// in [`crate::signature`]. `coeffs[0]` is always the scalar part.
-    pub coeffs: [T; DIM],
+    pub coeffs: A::Blades<T>,
 }
 
-impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize>
-    Multivector<T, P, Q, R, DIM>
-{
-    /// Compile-time check that `DIM == 2^(P+Q+R)`. Referencing this in
-    /// every constructor makes the check actually fire when the type is
-    /// used, not just when it's declared somewhere.
-    const _DIM_CHECK: () = assert!(
-        DIM == 1 << (P + Q + R),
-        "garust: Multivector<T,P,Q,R,DIM> requires DIM == 2^(P+Q+R)",
-    );
+// `derive` can't prove `A::Blades<T>: Clone/Copy/…` through the projected
+// associated type, so the standard marker traits are written by hand. The
+// bounds are real: `BladeStore<T>: Copy` makes the field `Copy`, and
+// `Scalar: PartialEq + Debug` covers the slice-based comparisons below.
 
+impl<A: Algebra, T: Scalar> Clone for Multivector<A, T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<A: Algebra, T: Scalar> Copy for Multivector<A, T> {}
+
+impl<A: Algebra, T: Scalar> PartialEq for Multivector<A, T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.coeffs.as_slice() == other.coeffs.as_slice()
+    }
+}
+
+impl<A: Algebra, T: Scalar> fmt::Debug for Multivector<A, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Multivector")
+            .field("coeffs", &self.coeffs.as_slice())
+            .finish()
+    }
+}
+
+impl<A: Algebra, T: Scalar> Multivector<A, T> {
     /// The zero multivector.
     pub fn zero() -> Self {
-        // Force the const-assert below to evaluate at monomorphization.
-        // The explicit unit pattern keeps both clippy::let_unit_value
-        // and the path_statements lint happy.
-        let () = Self::_DIM_CHECK;
-        Self { coeffs: [T::ZERO; DIM] }
+        Self {
+            coeffs: <A::Blades<T> as BladeStore<T>>::splat(T::ZERO),
+        }
     }
 
     /// A pure scalar `s + 0·e1 + 0·e2 + …`.
@@ -65,8 +81,9 @@ impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize
     /// `index >= DIM`.
     pub fn basis(index: usize) -> Self {
         assert!(
-            index < DIM,
-            "basis blade index {index} out of range for DIM = {DIM}",
+            index < A::DIM,
+            "basis blade index {index} out of range for DIM = {}",
+            A::DIM,
         );
         let mut m = Self::zero();
         m.coeffs[index] = T::ONE;
@@ -88,7 +105,7 @@ impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize
     /// leaving any real-magnitude coefficient untouched.
     pub fn cleaned(&self, tol: T) -> Self {
         let mut out = *self;
-        for i in 0..DIM {
+        for i in 0..A::DIM {
             if out.coeffs[i].abs() < tol {
                 out.coeffs[i] = T::ZERO;
             }
@@ -97,9 +114,7 @@ impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize
     }
 }
 
-impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize> Default
-    for Multivector<T, P, Q, R, DIM>
-{
+impl<A: Algebra, T: Scalar> Default for Multivector<A, T> {
     fn default() -> Self {
         Self::zero()
     }
@@ -112,56 +127,46 @@ impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize
 // in `R^DIM`. None of the *geometric* part of geometric algebra shows
 // up yet; that's all hiding in the product, which is coming next.
 
-impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize> Add
-    for Multivector<T, P, Q, R, DIM>
-{
+impl<A: Algebra, T: Scalar> Add for Multivector<A, T> {
     type Output = Self;
     fn add(mut self, rhs: Self) -> Self {
-        for i in 0..DIM {
+        for i in 0..A::DIM {
             self.coeffs[i] += rhs.coeffs[i];
         }
         self
     }
 }
 
-impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize> AddAssign
-    for Multivector<T, P, Q, R, DIM>
-{
+impl<A: Algebra, T: Scalar> AddAssign for Multivector<A, T> {
     fn add_assign(&mut self, rhs: Self) {
-        for i in 0..DIM {
+        for i in 0..A::DIM {
             self.coeffs[i] += rhs.coeffs[i];
         }
     }
 }
 
-impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize> Sub
-    for Multivector<T, P, Q, R, DIM>
-{
+impl<A: Algebra, T: Scalar> Sub for Multivector<A, T> {
     type Output = Self;
     fn sub(mut self, rhs: Self) -> Self {
-        for i in 0..DIM {
+        for i in 0..A::DIM {
             self.coeffs[i] -= rhs.coeffs[i];
         }
         self
     }
 }
 
-impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize> SubAssign
-    for Multivector<T, P, Q, R, DIM>
-{
+impl<A: Algebra, T: Scalar> SubAssign for Multivector<A, T> {
     fn sub_assign(&mut self, rhs: Self) {
-        for i in 0..DIM {
+        for i in 0..A::DIM {
             self.coeffs[i] -= rhs.coeffs[i];
         }
     }
 }
 
-impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize> Neg
-    for Multivector<T, P, Q, R, DIM>
-{
+impl<A: Algebra, T: Scalar> Neg for Multivector<A, T> {
     type Output = Self;
     fn neg(mut self) -> Self {
-        for i in 0..DIM {
+        for i in 0..A::DIM {
             self.coeffs[i] = -self.coeffs[i];
         }
         self
@@ -182,15 +187,13 @@ impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize
 // Cost: `O(DIM²)` per multiplication — fine for the algebras a human
 // would write by hand (≤ 1024 ops for `Cga3`).
 
-impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize> Mul
-    for Multivector<T, P, Q, R, DIM>
-{
+impl<A: Algebra, T: Scalar> Mul for Multivector<A, T> {
     type Output = Self;
     fn mul(self, rhs: Self) -> Self {
         let mut out = Self::zero();
-        for a in 0..DIM {
-            for b in 0..DIM {
-                let (idx, sign) = blade_product(a, b, P, Q);
+        for a in 0..A::DIM {
+            for b in 0..A::DIM {
+                let (idx, sign) = blade_product(a, b, A::P, A::Q);
                 if sign != 0 {
                     let term = self.coeffs[a] * rhs.coeffs[b];
                     if sign > 0 {
@@ -213,12 +216,10 @@ impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize
 // written out per concrete scalar because coherence forbids a blanket
 // `impl<T> Mul<Multivector<T, …>> for T`.
 
-impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize> Mul<T>
-    for Multivector<T, P, Q, R, DIM>
-{
+impl<A: Algebra, T: Scalar> Mul<T> for Multivector<A, T> {
     type Output = Self;
     fn mul(mut self, rhs: T) -> Self {
-        for i in 0..DIM {
+        for i in 0..A::DIM {
             self.coeffs[i] *= rhs;
         }
         self
@@ -227,11 +228,9 @@ impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize
 
 macro_rules! impl_left_scalar_mul {
     ($t:ty) => {
-        impl<const P: usize, const Q: usize, const R: usize, const DIM: usize>
-            Mul<Multivector<$t, P, Q, R, DIM>> for $t
-        {
-            type Output = Multivector<$t, P, Q, R, DIM>;
-            fn mul(self, rhs: Multivector<$t, P, Q, R, DIM>) -> Self::Output {
+        impl<A: Algebra> Mul<Multivector<A, $t>> for $t {
+            type Output = Multivector<A, $t>;
+            fn mul(self, rhs: Multivector<A, $t>) -> Self::Output {
                 rhs * self
             }
         }
@@ -250,15 +249,14 @@ impl_left_scalar_mul!(f64);
 // Blade labels are generated mechanically from the bit-mask index:
 // bit `k` → `e_{k+1}`. This is signature-agnostic, so in PGA `Cl(3,0,1)`
 // the null generator prints as `e4` rather than the conventional `e0`.
-// We'll fix that when we add per-algebra wrapper types.
+// For PGA-conventional output (null generator named `e0`, written first
+// in each blade) use [`Multivector::display_pga`].
 
-impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize> fmt::Display
-    for Multivector<T, P, Q, R, DIM>
-{
+impl<A: Algebra, T: Scalar> fmt::Display for Multivector<A, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let n = P + Q + R;
+        let n = A::N;
         let mut first = true;
-        for i in 0..DIM {
+        for i in 0..A::DIM {
             let c = self.coeffs[i];
             if c == T::ZERO {
                 continue;
@@ -334,22 +332,32 @@ mod tests {
     #[test]
     fn addition_is_componentwise() {
         // a = 1 + 2 e1 + 3 e12
-        let a = Vga2 { coeffs: [1.0, 2.0, 0.0, 3.0] };
+        let a = Vga2 {
+            coeffs: [1.0, 2.0, 0.0, 3.0],
+        };
         // b = 10 + 20 e2
-        let b = Vga2 { coeffs: [10.0, 0.0, 20.0, 0.0] };
+        let b = Vga2 {
+            coeffs: [10.0, 0.0, 20.0, 0.0],
+        };
         assert_eq!((a + b).coeffs, [11.0, 2.0, 20.0, 3.0]);
     }
 
     #[test]
     fn subtraction_is_componentwise() {
-        let a = Vga3 { coeffs: [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0] };
-        let b = Vga3 { coeffs: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0] };
+        let a = Vga3 {
+            coeffs: [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+        };
+        let b = Vga3 {
+            coeffs: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+        };
         assert_eq!((a - b).coeffs, [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]);
     }
 
     #[test]
     fn neg_flips_every_coefficient() {
-        let a = Vga2 { coeffs: [1.0, 2.0, -3.0, 4.0] };
+        let a = Vga2 {
+            coeffs: [1.0, 2.0, -3.0, 4.0],
+        };
         assert_eq!((-a).coeffs, [-1.0, -2.0, 3.0, -4.0]);
     }
 
@@ -414,9 +422,15 @@ mod tests {
     #[test]
     fn geometric_product_is_left_distributive() {
         // a * (b + c) == a*b + a*c, exercised on a non-trivial pair.
-        let a = Vga3 { coeffs: [1.0, 2.0, 0.0, -1.0, 0.0, 3.0, 0.0, 0.0] };
-        let b = Vga3 { coeffs: [0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 2.0] };
-        let c = Vga3 { coeffs: [2.0, 0.0, 0.0, 1.0, -1.0, 0.0, 1.0, 0.0] };
+        let a = Vga3 {
+            coeffs: [1.0, 2.0, 0.0, -1.0, 0.0, 3.0, 0.0, 0.0],
+        };
+        let b = Vga3 {
+            coeffs: [0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 2.0],
+        };
+        let c = Vga3 {
+            coeffs: [2.0, 0.0, 0.0, 1.0, -1.0, 0.0, 1.0, 0.0],
+        };
         let lhs = a * (b + c);
         let rhs = (a * b) + (a * c);
         assert_eq!(lhs.coeffs, rhs.coeffs);
@@ -432,7 +446,9 @@ mod tests {
 
     #[test]
     fn scalar_mul_left_matches_right() {
-        let v = Vga2 { coeffs: [1.0, -2.0, 0.5, 4.0] };
+        let v = Vga2 {
+            coeffs: [1.0, -2.0, 0.5, 4.0],
+        };
         assert_eq!((2.5 * v).coeffs, (v * 2.5).coeffs);
     }
 
@@ -457,13 +473,17 @@ mod tests {
     #[test]
     fn display_mixed_grade_with_signs() {
         // 2 + 3·e1 - e2 + e12
-        let m = Vga2 { coeffs: [2.0, 3.0, -1.0, 1.0] };
+        let m = Vga2 {
+            coeffs: [2.0, 3.0, -1.0, 1.0],
+        };
         assert_eq!(format!("{m}"), "2 + 3·e1 - e2 + e12");
     }
 
     #[test]
     fn display_starts_with_minus_when_first_term_negative() {
-        let m = Vga2 { coeffs: [0.0, -2.0, 0.0, 1.0] };
+        let m = Vga2 {
+            coeffs: [0.0, -2.0, 0.0, 1.0],
+        };
         assert_eq!(format!("{m}"), "-2·e1 + e12");
     }
 
@@ -471,19 +491,25 @@ mod tests {
 
     #[test]
     fn cleaned_zeros_subthreshold_coefficients() {
-        let m = Vga2 { coeffs: [1e-15, 1.0, -1e-13, 2.0] };
+        let m = Vga2 {
+            coeffs: [1e-15, 1.0, -1e-13, 2.0],
+        };
         assert_eq!(m.cleaned(1e-12).coeffs, [0.0, 1.0, 0.0, 2.0]);
     }
 
     #[test]
     fn cleaned_preserves_significant_coefficients() {
-        let m = Vga2 { coeffs: [0.5, -0.3, 0.1, 1e-5] };
+        let m = Vga2 {
+            coeffs: [0.5, -0.3, 0.1, 1e-5],
+        };
         assert_eq!(m.cleaned(1e-12).coeffs, m.coeffs);
     }
 
     #[test]
     fn cleaned_at_zero_tolerance_is_identity() {
-        let m = Vga2 { coeffs: [1e-300, 1.0, -2.0, 0.0] };
+        let m = Vga2 {
+            coeffs: [1e-300, 1.0, -2.0, 0.0],
+        };
         assert_eq!(m.cleaned(0.0).coeffs, m.coeffs);
     }
 

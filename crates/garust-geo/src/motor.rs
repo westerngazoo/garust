@@ -19,11 +19,12 @@
 
 use core::ops::Mul;
 
-use crate::multivector::Multivector;
-use crate::scalar::{Real, Scalar};
+use garust_core::multivector::Multivector;
+use garust_core::scalar::{Real, Scalar};
+use garust_core::Pga3Sig;
 
 /// The PGA multivector type a [`Motor`] wraps: `Cl(3, 0, 1)` over `T`.
-type Pga<T> = Multivector<T, 3, 0, 1, 16>;
+type Pga<T> = Multivector<Pga3Sig, T>;
 
 /// A rigid-body motion in 3D PGA — an even-grade versor of `Cl(3, 0, 1)`.
 ///
@@ -31,14 +32,21 @@ type Pga<T> = Multivector<T, 3, 0, 1, 16>;
 /// [`Motor::rotor`]; compose with `*` (or [`Motor::compose`]); and move
 /// geometry with [`Motor::apply`].
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Motor<T> {
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(transparent)
+)]
+pub struct Motor<T: Scalar> {
     versor: Pga<T>,
 }
 
 impl<T: Scalar> Motor<T> {
     /// The identity motion — leaves every object exactly where it is.
     pub fn identity() -> Self {
-        Self { versor: Pga::<T>::one() }
+        Self {
+            versor: Pga::<T>::one(),
+        }
     }
 
     /// Wrap a raw PGA multivector as a motor, unchecked.
@@ -64,13 +72,17 @@ impl<T: Scalar> Motor<T> {
     /// Compose two motions: `self.compose(&rhs)` does `rhs` first, then
     /// `self`, exactly like function composition. Equals `self * rhs`.
     pub fn compose(&self, rhs: &Self) -> Self {
-        Self { versor: self.versor * rhs.versor }
+        Self {
+            versor: self.versor * rhs.versor,
+        }
     }
 
     /// The inverse motion, undoing this one. Built from the versor
     /// inverse, so `m.compose(&m.inverse())` is the identity.
     pub fn inverse(&self) -> Self {
-        Self { versor: self.versor.versor_inverse() }
+        Self {
+            versor: self.versor.versor_inverse(),
+        }
     }
 
     /// `⟨M ~M⟩_0`. A unit motor (every rotor/translator and their
@@ -106,6 +118,26 @@ impl<T: Real> Motor<T> {
         let versor = (plane * (radians * T::from_f64(-0.5))).exp();
         Self { versor }
     }
+
+    /// A rotation by `radians` about an arbitrary `line` in space.
+    ///
+    /// Unlike [`Motor::rotor`], which spins about an origin axis, this
+    /// takes a full PGA line bivector — typically from
+    /// [`Pga3::line_through`](garust_core::Multivector::line_through) — so
+    /// the axis can be anywhere. The line is
+    /// normalized internally, then `exp(−½·radians·L̂)` is the rotor
+    /// about it. Points on the line are fixed; everything else swings
+    /// around it. (Compose with a [`Motor::translator`] along the line
+    /// to get a general screw motion.)
+    ///
+    /// `line` must be a genuine line (a 2-blade) with non-zero
+    /// Euclidean weight, so that `L̂² = −1` and the closed-form
+    /// exponential applies.
+    pub fn rotation_about(line: Pga<T>, radians: T) -> Self {
+        let unit = line.normalized();
+        let versor = (unit * (radians * T::from_f64(-0.5))).exp();
+        Self { versor }
+    }
 }
 
 /// Composition of motions. `a * b` applies `b` first, then `a`.
@@ -119,8 +151,8 @@ impl<T: Scalar> Mul for Motor<T> {
 #[cfg(test)]
 mod tests {
     use super::Motor;
-    use crate::Pga3;
-    use std::f64::consts::FRAC_PI_2;
+    use garust_core::Pga3;
+    use std::f64::consts::TAU;
 
     fn approx_eq(a: &[f64], b: &[f64], tol: f64) {
         assert_eq!(a.len(), b.len());
@@ -145,7 +177,7 @@ mod tests {
     #[test]
     fn rotor_about_x_axis_sends_y_to_z() {
         // 90° about the x-axis (e23 plane): (0,1,0) → (0,0,1).
-        let r = Motor::rotor(FRAC_PI_2, Pga3::basis(0b0110));
+        let r = Motor::rotor(TAU / 4.0, Pga3::basis(0b0110));
         let moved = r.apply(&Pga3::point(0.0, 1.0, 0.0)).cleaned(1e-10);
         approx_eq(&moved.coeffs, &Pga3::point(0.0, 0.0, 1.0).coeffs, 1e-12);
     }
@@ -169,14 +201,18 @@ mod tests {
         let m = Motor::translator(2.0, 3.0, -1.0) * Motor::rotor(0.9, Pga3::basis(0b0011));
         let round = m.compose(&m.inverse());
         // The round trip is the identity versor (the scalar 1).
-        approx_eq(&round.versor().cleaned(1e-10).coeffs, &Pga3::one().coeffs, 1e-10);
+        approx_eq(
+            &round.versor().cleaned(1e-10).coeffs,
+            &Pga3::one().coeffs,
+            1e-10,
+        );
     }
 
     #[test]
     fn screw_motion_matches_rotate_then_translate() {
         // Rotate (0,1,0) 90° about x → (0,0,1), then translate +3 in x
         // ⇒ (3,0,1). Order: M = T · R applies R first.
-        let r = Motor::rotor(FRAC_PI_2, Pga3::basis(0b0110));
+        let r = Motor::rotor(TAU / 4.0, Pga3::basis(0b0110));
         let t = Motor::translator(3.0, 0.0, 0.0);
         let m = t * r;
         let moved = m.apply(&Pga3::point(0.0, 1.0, 0.0)).cleaned(1e-10);
@@ -184,11 +220,46 @@ mod tests {
     }
 
     #[test]
+    fn rotation_about_origin_line_rotates_in_the_yz_plane() {
+        // 90° about the x-axis line sends (0,1,0) into the y→z plane:
+        // x stays 0 and the result lands on the unit circle there.
+        let axis = Pga3::point(0.0, 0.0, 0.0).line_through(&Pga3::point(1.0, 0.0, 0.0));
+        let about = Motor::rotation_about(axis, TAU / 4.0);
+        let moved = about.apply(&Pga3::point(0.0, 1.0, 0.0)).cleaned(1e-10);
+        // Read Euclidean coords back out of the PGA point (weight is 1).
+        let (x, y, z) = (-moved.coeffs[14], moved.coeffs[13], -moved.coeffs[11]);
+        assert!(x.abs() < 1e-10, "x should stay 0, got {x}");
+        assert!(y.abs() < 1e-10, "y should rotate away to 0, got {y}");
+        assert!((z.abs() - 1.0).abs() < 1e-10, "|z| should be 1, got {z}");
+    }
+
+    #[test]
+    fn rotation_about_off_origin_line_is_a_real_screw_axis() {
+        // A 180° turn about the vertical line through (1,0,0) carries the
+        // origin to (2,0,0) — the hallmark of an *off-origin* rotation
+        // that a plain origin rotor cannot express.
+        let axis = Pga3::point(1.0, 0.0, 0.0).line_through(&Pga3::point(1.0, 0.0, 1.0));
+        let half_turn = Motor::rotation_about(axis, TAU / 2.0);
+        let moved = half_turn.apply(&Pga3::point(0.0, 0.0, 0.0)).cleaned(1e-10);
+        approx_eq(&moved.coeffs, &Pga3::point(2.0, 0.0, 0.0).coeffs, 1e-10);
+    }
+
+    #[test]
+    fn points_on_the_axis_are_fixed() {
+        let axis = Pga3::point(1.0, 0.0, 0.0).line_through(&Pga3::point(1.0, 0.0, 1.0));
+        let m = Motor::rotation_about(axis, 0.9);
+        // (1, 0, 0.5) lies on that vertical line, so it must not move.
+        let on_axis = Pga3::point(1.0, 0.0, 0.5);
+        let moved = m.apply(&on_axis).cleaned(1e-10);
+        approx_eq(&moved.coeffs, &on_axis.coeffs, 1e-10);
+    }
+
+    #[test]
     fn composition_order_matters() {
         // Translate-then-rotate ≠ rotate-then-translate in general.
         // (The translation must not be along the rotation axis, or the
         // two would commute — here we rotate about x and translate in y.)
-        let r = Motor::rotor(FRAC_PI_2, Pga3::basis(0b0110)); // about x-axis
+        let r = Motor::rotor(TAU / 4.0, Pga3::basis(0b0110)); // about x-axis
         let t = Motor::translator(0.0, 3.0, 0.0); // along y
         let tr = (t * r).apply(&Pga3::point(0.0, 1.0, 0.0)).cleaned(1e-10);
         let rt = (r * t).apply(&Pga3::point(0.0, 1.0, 0.0)).cleaned(1e-10);

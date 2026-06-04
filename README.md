@@ -1,5 +1,7 @@
 # garust
 
+[![CI](https://github.com/westerngazoo/garust/actions/workflows/ci.yml/badge.svg)](https://github.com/westerngazoo/garust/actions/workflows/ci.yml)
+
 **Geometric Algebra in Rust — generic over the Clifford signature `Cl(P, Q, R)` and the scalar type.**
 
 A from-scratch, **zero-dependency** implementation of Geometric Algebra
@@ -97,10 +99,33 @@ let moved = m.apply(&Pga3::point(0.0, 1.0, 0.0)); // → point(3, 0, 1)
 let back  = m.inverse().apply(&moved);            // → point(0, 1, 0)
 ```
 
+### Conformal transforms: CGA adds scaling
+
+Where a `Motor` covers rigid motions, a `Conformal` versor in CGA
+`Cl(4,1,0)` also gives you uniform **scaling** about the origin — and
+it acts on spheres and planes just as readily as on points.
+
+```rust
+use garust::{Cga3, Conformal3};
+
+let scale = Conformal3::dilator(2.0);          // ×2 about the origin
+let shift = Conformal3::translator(1.0, 0.0, 0.0);
+
+// Order matters, just like matrices:
+let p = Cga3::cga_point(1.0, 0.0, 0.0);
+let a = (shift * scale).apply(&p).to_euclidean(); // ×2 then +1 → (3,0,0)
+let b = (scale * shift).apply(&p).to_euclidean(); // +1 then ×2 → (4,0,0)
+
+// A dilation grows the whole sphere, not just a point:
+let unit = Cga3::sphere(0.0, 0.0, 0.0, 1.0);
+let big  = scale.apply(&unit);                    // now radius 2
+```
+
 ## What's implemented
 
-- `Multivector<T, P, Q, R, DIM>` — a dense `[T; 2^N]` element, generic
-  over signature and scalar
+- `Multivector<A, T>` — a dense `[T; 2^N]` element, generic over the
+  signature marker `A: Algebra` and the scalar `T` (mint new signatures
+  with the `define_algebra!` macro)
 - linear ops: `+`, `−`, negation, scalar multiplication (both sides),
   equality, `Display`
 - the **geometric product**, plus wedge `∧`, inner `·`, and scalar
@@ -113,6 +138,9 @@ let back  = m.inverse().apply(&moved);            // → point(0, 1, 0)
   complements, and the **regressive product** `∨` (the *meet*)
 - **PGA constructors** for `Cl(3,0,1)`: `point`, `plane`, `line_through`
 - **`Motor`** — rotors, translators, and their screw-motion compositions
+- **CGA constructors** for `Cl(4,1,0)`: `cga_point`, `sphere`, `cga_plane`
+- **`Conformal`** — translators, rotors, and origin dilations on the
+  conformal model
 
 ## Generic over the scalar type
 
@@ -120,7 +148,7 @@ let back  = m.inverse().apply(&moved);            // → point(0, 1, 0)
 [`Scalar`] (and [`Real`] for the exponential). `f32` and `f64` are
 provided; any ordered field — dual numbers for autodiff, fixed-point
 types — can opt in by implementing those traits. For a custom scalar `S`,
-name the full form: `Multivector::<S, 3, 0, 0, 8>`.
+name the full form with a signature marker: `Multivector::<Vga3Sig, S>`.
 
 ## Design notes
 

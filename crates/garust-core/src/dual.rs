@@ -30,13 +30,12 @@
 //! identically in Euclidean, projective, conformal, and spacetime
 //! algebras. `lc` and `rc` are mutual inverses (`lc(rc(M)) = M`).
 
+use crate::algebra::Algebra;
 use crate::multivector::Multivector;
 use crate::scalar::Scalar;
 use crate::signature::swap_sign;
 
-impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize>
-    Multivector<T, P, Q, R, DIM>
-{
+impl<A: Algebra, T: Scalar> Multivector<A, T> {
     /// The unit pseudoscalar `I = e1 ∧ e2 ∧ … ∧ eN` — the single
     /// top-grade blade, living at index `DIM - 1` (all bits set).
     ///
@@ -44,7 +43,7 @@ impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize
     /// ([`Multivector::regressive`]), mirroring the way the scalar `1`
     /// is the identity of the geometric product.
     pub fn pseudoscalar() -> Self {
-        Self::basis(DIM - 1)
+        Self::basis(A::DIM - 1)
     }
 
     /// Right complement, defined blade-by-blade by `e_S ∧ rc(e_S) = I`.
@@ -55,8 +54,8 @@ impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize
     /// metric dual is not. Inverse of [`Multivector::left_complement`].
     pub fn right_complement(&self) -> Self {
         let mut out = Self::zero();
-        let top = DIM - 1;
-        for i in 0..DIM {
+        let top = A::DIM - 1;
+        for i in 0..A::DIM {
             let c = self.coeffs[i];
             if c == T::ZERO {
                 continue;
@@ -79,8 +78,8 @@ impl<T: Scalar, const P: usize, const Q: usize, const R: usize, const DIM: usize
     /// present has a self-reversing grade.
     pub fn left_complement(&self) -> Self {
         let mut out = Self::zero();
-        let top = DIM - 1;
-        for i in 0..DIM {
+        let top = A::DIM - 1;
+        for i in 0..A::DIM {
             let c = self.coeffs[i];
             if c == T::ZERO {
                 continue;
@@ -139,11 +138,7 @@ mod tests {
         for i in 0..8 {
             let e = Vga3::basis(i);
             let got = e.wedge(&e.right_complement());
-            assert_eq!(
-                got.coeffs,
-                Vga3::pseudoscalar().coeffs,
-                "blade index {i}"
-            );
+            assert_eq!(got.coeffs, Vga3::pseudoscalar().coeffs, "blade index {i}");
         }
     }
 
@@ -153,18 +148,17 @@ mod tests {
         for i in 0..8 {
             let e = Vga3::basis(i);
             let got = e.left_complement().wedge(&e);
-            assert_eq!(
-                got.coeffs,
-                Vga3::pseudoscalar().coeffs,
-                "blade index {i}"
-            );
+            assert_eq!(got.coeffs, Vga3::pseudoscalar().coeffs, "blade index {i}");
         }
     }
 
     #[test]
     fn right_complement_of_vector_is_perpendicular_plane() {
         // In Euclidean 3D the complement is the Hodge dual: rc(e1) = e23.
-        assert_eq!(Vga3::basis(1).right_complement().coeffs, Vga3::basis(6).coeffs);
+        assert_eq!(
+            Vga3::basis(1).right_complement().coeffs,
+            Vga3::basis(6).coeffs
+        );
         // rc(e2) = e31 = -e13 ; e13 is index 0b101 = 5.
         assert_eq!(
             Vga3::basis(2).right_complement().coeffs,
@@ -175,7 +169,9 @@ mod tests {
     #[test]
     fn left_and_right_complements_are_inverse() {
         // lc(rc(M)) == M and rc(lc(M)) == M on a dense multivector.
-        let m = Vga3 { coeffs: [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0] };
+        let m = Vga3 {
+            coeffs: [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+        };
         assert_eq!(m.right_complement().left_complement().coeffs, m.coeffs);
         assert_eq!(m.left_complement().right_complement().coeffs, m.coeffs);
     }
@@ -201,7 +197,9 @@ mod tests {
     #[test]
     fn pseudoscalar_is_the_regressive_identity() {
         // I ∨ M == M ∨ I == M for an arbitrary multivector.
-        let m = Vga3 { coeffs: [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0] };
+        let m = Vga3 {
+            coeffs: [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+        };
         let i = Vga3::pseudoscalar();
         assert_eq!(i.regressive(&m).coeffs, m.coeffs);
         assert_eq!(m.regressive(&i).coeffs, m.coeffs);
@@ -212,8 +210,12 @@ mod tests {
         // PGA Cl(3,0,1) has a *null* pseudoscalar (I² = 0), so the
         // metric dual M·I⁻¹ is undefined — yet the combinatorial
         // complements and the regressive identity still hold exactly.
-        let m = Pga3 { coeffs: [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0,
-                                9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0] };
+        let m = Pga3 {
+            coeffs: [
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
+                16.0,
+            ],
+        };
         // Pseudoscalar is null here — confirm the metric dual would fail.
         let i = Pga3::pseudoscalar();
         assert_eq!((i * i).cleaned(1e-12).coeffs, Pga3::zero().coeffs);
