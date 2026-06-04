@@ -62,13 +62,38 @@ jobs:
       - name: Install Rust 1.79
         uses: dtolnay/rust-toolchain@1.79
 
-      # The MSRV gate covers the *consumer surface* — the libraries and the
-      # facade's examples — which is the zero-dependency promise downstream
-      # users actually compile. It deliberately skips two things:
-      #   * garust-derive: the optional proc-macro pulls a heavier toolchain
-      #     (syn, proc-macro-crate) whose own MSRV need not bind the library.
-      #   * test targets (--lib --examples, not --all-targets): the proptest
-      #     dev-dependency is test-only tooling. Dev-deps are not transitive,
-      #     so they never reach consumers and need not honour our MSRV.
-      - name: Build on MSRV
-        run: cargo build --workspace --exclude garust-derive --lib --examples
+      - uses: taiki-e/install-action@cargo-hack
+
+      # The MSRV gate covers the *consumer surface* — the libraries — which is
+      # the zero-dependency promise downstream users actually compile.
+      # `cargo hack --no-dev-deps` strips dev-dependencies *before resolving*,
+      # so test-only tooling (proptest, criterion) and its transitive deps —
+      # some of which now require a newer edition than cargo 1.79 can even
+      # parse — never enter the dependency graph. (A plain `cargo build --lib`
+      # still resolves the whole workspace, dev-deps included, and would choke
+      # on those manifests.) garust-derive is excluded: its proc-macro
+      # toolchain (syn, proc-macro-crate) has its own, higher MSRV.
+      - name: Check libraries on MSRV
+        run: cargo hack check --no-dev-deps --workspace --exclude garust-derive --lib
+
+  no_std:
+    name: no_std (bare-metal + libm)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust with a bare-metal target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: thumbv7em-none-eabi
+
+      # Build the libraries for a target that has no `std` at all: this fails
+      # if anything outside the `std` feature touches the standard library.
+      # `libm` supplies the float transcendentals in std's place, and the
+      # last build also confirms serde + bytemuck compose under no_std.
+      - name: Build core (no_std + libm)
+        run: cargo build -p garust-core --no-default-features --features libm --target thumbv7em-none-eabi
+      - name: Build geo (no_std + libm)
+        run: cargo build -p garust-geo --no-default-features --features libm --target thumbv7em-none-eabi
+      - name: Build umbrella (no_std + libm + serde + bytemuck)
+        run: cargo build -p garust --no-default-features --features "libm serde bytemuck" --target thumbv7em-none-eabi

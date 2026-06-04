@@ -45,9 +45,18 @@ type Cga<T> = Multivector<Cga3Sig, T>;
     derive(serde::Serialize, serde::Deserialize),
     serde(transparent)
 )]
+#[repr(transparent)]
 pub struct Conformal<T: Scalar> {
     versor: Cga<T>,
 }
+
+// SAFETY: `Conformal` is `#[repr(transparent)]` over its `Cga<T>` versor, so
+// it inherits that multivector's plain-old-data layout under the `bytemuck`
+// feature — a versor is just its 32 scalar coefficients.
+#[cfg(feature = "bytemuck")]
+unsafe impl<T: Scalar> bytemuck::Zeroable for Conformal<T> where Cga<T>: bytemuck::Zeroable {}
+#[cfg(feature = "bytemuck")]
+unsafe impl<T: Scalar + 'static> bytemuck::Pod for Conformal<T> where Cga<T>: bytemuck::Pod {}
 
 impl<T: Scalar> Conformal<T> {
     /// The identity transformation — leaves every object where it is.

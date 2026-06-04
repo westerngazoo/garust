@@ -51,9 +51,18 @@ macro_rules! cga_object {
             derive(serde::Serialize, serde::Deserialize),
             serde(transparent)
         )]
+        #[repr(transparent)]
         pub struct $name<T: Scalar = f64> {
             mv: Cga<T>,
         }
+
+        // SAFETY: `#[repr(transparent)]` over a `Cga<T>` multivector, so the
+        // newtype inherits its plain-old-data layout under the `bytemuck`
+        // feature — handy for uploading a point/sphere/plane buffer to the GPU.
+        #[cfg(feature = "bytemuck")]
+        unsafe impl<T: Scalar> bytemuck::Zeroable for $name<T> where Cga<T>: bytemuck::Zeroable {}
+        #[cfg(feature = "bytemuck")]
+        unsafe impl<T: Scalar + 'static> bytemuck::Pod for $name<T> where Cga<T>: bytemuck::Pod {}
 
         impl<T: Scalar> $name<T> {
             /// Wrap a raw CGA multivector, unchecked.

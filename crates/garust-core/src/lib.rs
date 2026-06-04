@@ -25,14 +25,35 @@
 //!
 //! # Cargo features
 //!
-//! Both are off by default, keeping the crate dependency-free:
+//! - `std` *(default)* — use the standard library's float math for the
+//!   `f32`/`f64` transcendentals. The crate is otherwise `#![no_std]` and
+//!   allocates nothing, so turning this off (`default-features = false`)
+//!   gives a `no_std`, allocator-free build.
+//! - `libm` — supply those transcendentals via the dependency-light
+//!   [`libm`](https://crates.io/crates/libm) crate instead, for `no_std`.
+//!   Enable exactly one of `std` / `libm` to use `f32`/`f64`; a custom
+//!   [`Scalar`] coefficient type needs neither.
+//!
+//! The rest are off by default and keep the crate dependency-free:
 //!
 //! - `derive` — the `#[derive(Algebra)]` proc-macro.
 //! - `serde` — `Serialize` / `Deserialize` for [`Multivector`], as a flat
 //!   sequence of its blade coefficients (works for every signature, not
 //!   just those small enough for serde's array impls).
+//! - `bytemuck` — `Pod` / `Zeroable` for [`Multivector`] (which is
+//!   `#[repr(transparent)]` over its coefficient array), for zero-copy
+//!   reinterpretation as raw bytes or flat scalars.
 
+#![cfg_attr(not(test), no_std)]
 #![deny(missing_docs)]
+
+// Under the `std` feature the crate links the standard library, which
+// supplies the float-math backend in [`scalar`]; otherwise the crate is
+// `#![no_std]` and the optional `libm` feature provides the transcendentals
+// (a custom [`Scalar`] needs neither). Test builds always have `std`. The
+// library allocates nothing, so no `alloc` is required.
+#[cfg(feature = "std")]
+extern crate std;
 
 pub mod algebra;
 pub mod cga;
@@ -50,6 +71,11 @@ pub mod transform;
 // regardless of the module's visibility.
 #[cfg(feature = "serde")]
 mod serde_impls;
+
+// `Pod`/`Zeroable` for `Multivector`, behind the `bytemuck` feature. Also a
+// private impl-only module (see the comment on `serde_impls`).
+#[cfg(feature = "bytemuck")]
+mod bytemuck_impls;
 
 pub use algebra::{Algebra, BladeStore};
 pub use multivector::Multivector;

@@ -10,17 +10,34 @@ keywords = ["geometric-algebra", "clifford-algebra", "math", "ga"]
 categories = ["mathematics"]
 
 [features]
+default = ["std"]
+# Use the standard library's float math (sqrt, sin, …). On by default; the
+# crate is otherwise `#![no_std]` and allocation-free. For no_std, set
+# `default-features = false` and enable `libm` instead.
+std = []
+# Provide the float transcendentals via the `libm` crate, for no_std builds.
+libm = ["dep:libm"]
 # Opt-in `#[derive(Algebra)]`. Off by default so the crate stays zero-dep;
 # enabling it pulls in the `garust-derive` proc-macro and its toolchain.
 derive = ["dep:garust-derive"]
 # Opt-in `serde::{Serialize, Deserialize}` for `Multivector`. Off by default
 # so the crate stays zero-dep; enabling it pulls in `serde`.
 serde = ["dep:serde"]
+# Opt-in `bytemuck::{Pod, Zeroable}` for `Multivector`, for zero-copy GPU
+# uploads. Off by default; enabling it pulls in `bytemuck`.
+bytemuck = ["dep:bytemuck"]
 
 [dependencies]
 garust-derive = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
+bytemuck = { workspace = true, optional = true }
+libm = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
 serde_json = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "products"
+harness = false

@@ -19,6 +19,10 @@
 //! [`garust`](https://crates.io/crates/garust) crate, which re-exports this
 //! one alongside the core.
 
+// `no_std` by default (test builds get `std`). The typed layer calls only
+// `garust-core` and `core`, never the standard library directly, so the
+// `std` / `libm` features just forward to the kernel's math backend.
+#![cfg_attr(not(test), no_std)]
 #![deny(missing_docs)]
 
 pub mod cga;
@@ -116,5 +120,38 @@ mod serde_tests {
         let s: cga::Sphere = cga::Sphere::new(0.0, 0.0, 0.0, 1.0);
         let back: cga::Sphere = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
         assert_eq!(back, s);
+    }
+}
+
+// Each typed object is `#[repr(transparent)]` over its multivector, so under
+// the `bytemuck` feature it is `Pod` and a slice of them reinterprets as a
+// flat scalar buffer — the shape a GPU upload wants.
+#[cfg(all(test, feature = "bytemuck"))]
+mod bytemuck_tests {
+    use crate::{cga, pga, Motor};
+    use garust_core::Pga3;
+
+    #[test]
+    fn motor_round_trips_through_bytes() {
+        let m = Motor::translator(1.0, 2.0, 3.0) * Motor::rotor(0.7, Pga3::basis(0b0110));
+        let bytes = bytemuck::bytes_of(&m);
+        let back: Motor<f64> = *bytemuck::from_bytes(bytes);
+        assert_eq!(back, m);
+    }
+
+    #[test]
+    fn object_buffers_cast_to_flat_scalars() {
+        // A PGA point cloud views as a flat f64 buffer — 16 scalars per point.
+        let points = [
+            pga::Point::new(1.0, 2.0, 3.0),
+            pga::Point::new(4.0, 5.0, 6.0),
+        ];
+        let flat: &[f64] = bytemuck::cast_slice(&points);
+        assert_eq!(flat.len(), 32);
+
+        // CGA objects are 32-wide; confirm the larger signature casts too.
+        let spheres = [cga::Sphere::new(0.0, 0.0, 0.0, 1.0)];
+        let flat: &[f64] = bytemuck::cast_slice(&spheres);
+        assert_eq!(flat.len(), 32);
     }
 }

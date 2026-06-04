@@ -73,8 +73,13 @@ pub trait Real: Scalar {
     fn ln(self) -> Self;
 }
 
+// `abs` and the transcendentals are the only operations that need a math
+// backend — everything else is plain `core` arithmetic. We therefore take
+// the backend functions as macro arguments and stamp the impls out once per
+// backend (the standard library or `libm`), each gated by feature below. A
+// custom `Scalar`/`Real` type needs neither feature.
 macro_rules! impl_scalar_real {
-    ($t:ty) => {
+    ($t:ty, $abs:path, $sqrt:path, $sin:path, $cos:path, $sinh:path, $cosh:path, $ln:path) => {
         impl Scalar for $t {
             const ZERO: Self = 0.0;
             const ONE: Self = 1.0;
@@ -84,41 +89,96 @@ macro_rules! impl_scalar_real {
             }
             #[inline]
             fn abs(self) -> Self {
-                <$t>::abs(self)
+                $abs(self)
             }
         }
 
         impl Real for $t {
             #[inline]
             fn sqrt(self) -> Self {
-                <$t>::sqrt(self)
+                $sqrt(self)
             }
             #[inline]
             fn sin(self) -> Self {
-                <$t>::sin(self)
+                $sin(self)
             }
             #[inline]
             fn cos(self) -> Self {
-                <$t>::cos(self)
+                $cos(self)
             }
             #[inline]
             fn sinh(self) -> Self {
-                <$t>::sinh(self)
+                $sinh(self)
             }
             #[inline]
             fn cosh(self) -> Self {
-                <$t>::cosh(self)
+                $cosh(self)
             }
             #[inline]
             fn ln(self) -> Self {
-                <$t>::ln(self)
+                $ln(self)
             }
         }
     };
 }
 
-impl_scalar_real!(f32);
-impl_scalar_real!(f64);
+// The standard-library backend: the inherent float methods. `std` is linked
+// at the crate root under the `std` feature. Takes precedence when both
+// `std` and `libm` are enabled.
+#[cfg(feature = "std")]
+mod float_backend {
+    use super::{Real, Scalar};
+
+    impl_scalar_real!(
+        f32,
+        f32::abs,
+        f32::sqrt,
+        f32::sin,
+        f32::cos,
+        f32::sinh,
+        f32::cosh,
+        f32::ln
+    );
+    impl_scalar_real!(
+        f64,
+        f64::abs,
+        f64::sqrt,
+        f64::sin,
+        f64::cos,
+        f64::sinh,
+        f64::cosh,
+        f64::ln
+    );
+}
+
+// The `libm` backend: the same functions without the standard library, for
+// `no_std` builds. Used when `std` is off and `libm` is on. `libm::log` is
+// the natural logarithm.
+#[cfg(all(not(feature = "std"), feature = "libm"))]
+mod float_backend {
+    use super::{Real, Scalar};
+
+    impl_scalar_real!(
+        f32,
+        libm::fabsf,
+        libm::sqrtf,
+        libm::sinf,
+        libm::cosf,
+        libm::sinhf,
+        libm::coshf,
+        libm::logf
+    );
+    impl_scalar_real!(
+        f64,
+        libm::fabs,
+        libm::sqrt,
+        libm::sin,
+        libm::cos,
+        libm::sinh,
+        libm::cosh,
+        libm::log
+    );
+}
 
 /// Returns the larger of two scalars (`PartialOrd`-based, NaN-naive).
 /// A small helper since `Ord::max` isn't available for floats.

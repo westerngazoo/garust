@@ -10,6 +10,13 @@ keywords = ["geometric-algebra", "pga", "cga", "motor", "conformal"]
 categories = ["mathematics"]
 
 [features]
+default = ["std"]
+# Standard-library float math, forwarded to the kernel. On by default; the
+# crate is otherwise `#![no_std]`. For no_std, use `default-features = false`
+# and enable `libm`.
+std = ["garust-core/std"]
+# `no_std` float math via `libm`, forwarded to the kernel.
+libm = ["garust-core/libm"]
 # Forwards to `garust-core/derive` so `#[derive(Algebra)]` is reachable for
 # consumers of this crate; also gates the cross-crate derive test.
 derive = ["garust-core/derive"]
@@ -17,11 +24,23 @@ derive = ["garust-core/derive"]
 # newtypes). Forwards to `garust-core/serde` so the underlying `Multivector`
 # is (de)serializable, and pulls in `serde` for the derives here.
 serde = ["dep:serde", "garust-core/serde"]
+# Opt-in bytemuck for the typed objects. Forwards to `garust-core/bytemuck`
+# so the underlying `Multivector` is `Pod`/`Zeroable`, and pulls in
+# `bytemuck` for the newtype impls here.
+bytemuck = ["dep:bytemuck", "garust-core/bytemuck"]
 
 [dependencies]
+# Inherits `default-features = false` from `[workspace.dependencies]`, so this
+# crate's `std`/`libm` features choose the kernel's math backend.
 garust-core = { workspace = true }
 serde = { workspace = true, optional = true }
+bytemuck = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
 serde_json = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "transforms"
+harness = false
