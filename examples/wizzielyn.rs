@@ -8,15 +8,15 @@
 //! composed with `*` and applied with one call.
 
 use garust::{Vga2, Vga3};
-use std::f64::consts::FRAC_PI_2;
+use std::f64::consts::TAU;
 
 fn main() {
     println!("== Rotors in 2D ==");
     // Build the unit rotor for a 90° rotation in the e12 plane:
     //   R = exp(-θ/2 · e12) = cos(θ/2) - sin(θ/2) e12
     let e12 = Vga2::basis(3);
-    let r90 = (e12 * (-FRAC_PI_2 / 2.0)).exp();
-    println!("R = exp(-π/4 · e12)  = {r90}");
+    let r90 = (e12 * (-TAU / 8.0)).exp();
+    println!("R = exp(-τ/8 · e12)  = {r90}");
     println!(
         "|R|²                  = {}   (unit norm by construction)",
         r90.norm_squared()
@@ -38,8 +38,8 @@ fn main() {
     println!("== Rotors in 3D — the axis is fixed ==");
     // 90° rotation in the e23 plane (i.e. about the e1 axis).
     let e23 = Vga3::basis(6); // 0b110
-    let r3d = (e23 * (-FRAC_PI_2 / 2.0)).exp();
-    println!("R = exp(-π/4 · e23)  = {r3d}");
+    let r3d = (e23 * (-TAU / 8.0)).exp();
+    println!("R = exp(-τ/8 · e23)  = {r3d}");
     println!(
         "R · e1 · ~R           = {}   (axis ⇒ unchanged)",
         r3d.sandwich(&Vga3::basis(1)).cleaned(1e-10)
@@ -129,7 +129,7 @@ fn main() {
 
     // Compose a rotor with a translator → a motor (rigid-body transform).
     // R rotates 90° about the e1 axis (in the e2-e3 plane).
-    let r = ((e2 * e3) * (-FRAC_PI_2 / 2.0)).exp();
+    let r = ((e2 * e3) * (-TAU / 8.0)).exp();
     let motor = t * r;
     println!();
     println!("Motor M = T · R       = {}", motor.cleaned(1e-10));
@@ -228,7 +228,7 @@ fn main() {
     println!("== Round 7: Motors — rigid motions with a clean API ==");
     use garust::Motor3;
     // Rotate 90° about the x-axis (e23 plane), then translate +3 in x.
-    let r = Motor3::rotor(FRAC_PI_2, Pga3::basis(0b0110));
+    let r = Motor3::rotor(TAU / 4.0, Pga3::basis(0b0110));
     let t = Motor3::translator(3.0, 0.0, 0.0);
     let m = t * r; // compose: `*` applies r first, then t
     println!(

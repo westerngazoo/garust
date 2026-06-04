@@ -147,7 +147,7 @@ impl<T: Scalar> Mul for Motor<T> {
 mod tests {
     use super::Motor;
     use garust_core::Pga3;
-    use std::f64::consts::FRAC_PI_2;
+    use std::f64::consts::TAU;
 
     fn approx_eq(a: &[f64], b: &[f64], tol: f64) {
         assert_eq!(a.len(), b.len());
@@ -172,7 +172,7 @@ mod tests {
     #[test]
     fn rotor_about_x_axis_sends_y_to_z() {
         // 90° about the x-axis (e23 plane): (0,1,0) → (0,0,1).
-        let r = Motor::rotor(FRAC_PI_2, Pga3::basis(0b0110));
+        let r = Motor::rotor(TAU / 4.0, Pga3::basis(0b0110));
         let moved = r.apply(&Pga3::point(0.0, 1.0, 0.0)).cleaned(1e-10);
         approx_eq(&moved.coeffs, &Pga3::point(0.0, 0.0, 1.0).coeffs, 1e-12);
     }
@@ -207,7 +207,7 @@ mod tests {
     fn screw_motion_matches_rotate_then_translate() {
         // Rotate (0,1,0) 90° about x → (0,0,1), then translate +3 in x
         // ⇒ (3,0,1). Order: M = T · R applies R first.
-        let r = Motor::rotor(FRAC_PI_2, Pga3::basis(0b0110));
+        let r = Motor::rotor(TAU / 4.0, Pga3::basis(0b0110));
         let t = Motor::translator(3.0, 0.0, 0.0);
         let m = t * r;
         let moved = m.apply(&Pga3::point(0.0, 1.0, 0.0)).cleaned(1e-10);
@@ -219,7 +219,7 @@ mod tests {
         // 90° about the x-axis line sends (0,1,0) into the y→z plane:
         // x stays 0 and the result lands on the unit circle there.
         let axis = Pga3::point(0.0, 0.0, 0.0).line_through(&Pga3::point(1.0, 0.0, 0.0));
-        let about = Motor::rotation_about(axis, FRAC_PI_2);
+        let about = Motor::rotation_about(axis, TAU / 4.0);
         let moved = about.apply(&Pga3::point(0.0, 1.0, 0.0)).cleaned(1e-10);
         // Read Euclidean coords back out of the PGA point (weight is 1).
         let (x, y, z) = (-moved.coeffs[14], moved.coeffs[13], -moved.coeffs[11]);
@@ -234,7 +234,7 @@ mod tests {
         // origin to (2,0,0) — the hallmark of an *off-origin* rotation
         // that a plain origin rotor cannot express.
         let axis = Pga3::point(1.0, 0.0, 0.0).line_through(&Pga3::point(1.0, 0.0, 1.0));
-        let half_turn = Motor::rotation_about(axis, std::f64::consts::PI);
+        let half_turn = Motor::rotation_about(axis, TAU / 2.0);
         let moved = half_turn.apply(&Pga3::point(0.0, 0.0, 0.0)).cleaned(1e-10);
         approx_eq(&moved.coeffs, &Pga3::point(2.0, 0.0, 0.0).coeffs, 1e-10);
     }
@@ -254,7 +254,7 @@ mod tests {
         // Translate-then-rotate ≠ rotate-then-translate in general.
         // (The translation must not be along the rotation axis, or the
         // two would commute — here we rotate about x and translate in y.)
-        let r = Motor::rotor(FRAC_PI_2, Pga3::basis(0b0110)); // about x-axis
+        let r = Motor::rotor(TAU / 4.0, Pga3::basis(0b0110)); // about x-axis
         let t = Motor::translator(0.0, 3.0, 0.0); // along y
         let tr = (t * r).apply(&Pga3::point(0.0, 1.0, 0.0)).cleaned(1e-10);
         let rt = (r * t).apply(&Pga3::point(0.0, 1.0, 0.0)).cleaned(1e-10);

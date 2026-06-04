@@ -120,7 +120,7 @@ impl<A: Algebra, T: Real> Multivector<A, T> {
 #[cfg(test)]
 mod tests {
     use crate::{Vga2, Vga3};
-    use std::f64::consts::FRAC_PI_2;
+    use std::f64::consts::TAU;
 
     fn approx_eq(a: &[f64], b: &[f64], tol: f64) {
         assert_eq!(a.len(), b.len());
@@ -167,7 +167,7 @@ mod tests {
     #[test]
     fn rotor_90_in_e12_sends_e1_to_e2() {
         let e12 = Vga2::basis(3);
-        let r = (e12 * (-FRAC_PI_2 / 2.0)).exp();
+        let r = (e12 * (-TAU / 8.0)).exp();
         let rotated = r.sandwich(&Vga2::basis(1));
         approx_eq(&rotated.coeffs, &Vga2::basis(2).coeffs, 1e-12);
     }
@@ -175,7 +175,7 @@ mod tests {
     #[test]
     fn rotor_90_in_e12_sends_e2_to_minus_e1() {
         let e12 = Vga2::basis(3);
-        let r = (e12 * (-FRAC_PI_2 / 2.0)).exp();
+        let r = (e12 * (-TAU / 8.0)).exp();
         let rotated = r.sandwich(&Vga2::basis(2));
         approx_eq(&rotated.coeffs, &(-Vga2::basis(1)).coeffs, 1e-12);
     }
@@ -220,10 +220,10 @@ mod tests {
     }
 
     #[test]
-    fn exp_of_half_pi_e12_is_e12() {
-        // exp((π/2) e12) where e12² = -1
-        //   = cos(π/2) + sin(π/2) (e12 / 1) = e12
-        let b = Vga2::basis(3) * FRAC_PI_2;
+    fn exp_of_quarter_tau_e12_is_e12() {
+        // exp((τ/4) e12) where e12² = -1
+        //   = cos(τ/4) + sin(τ/4) (e12 / 1) = e12
+        let b = Vga2::basis(3) * (TAU / 4.0);
         approx_eq(&b.exp().coeffs, &Vga2::basis(3).coeffs, 1e-12);
     }
 

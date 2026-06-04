@@ -168,7 +168,7 @@ mod tests {
     use super::{Plane, Point, Sphere};
     use crate::Conformal;
     use garust_core::Cga3;
-    use std::f64::consts::FRAC_PI_2;
+    use std::f64::consts::TAU;
 
     fn approx_xyz(got: (f64, f64, f64), want: (f64, f64, f64)) {
         let (x, y, z) = got;
@@ -247,7 +247,7 @@ mod tests {
     #[test]
     fn rotor_about_x_axis_sends_y_to_z() {
         // 90° in the e23 plane: (0, 1, 0) → (0, 0, 1).
-        let r = Conformal::rotor(FRAC_PI_2, Cga3::basis(0b0110));
+        let r = Conformal::rotor(TAU / 4.0, Cga3::basis(0b0110));
         let moved = Point::new(0.0, 1.0, 0.0).transform(&r);
         approx_xyz(moved.to_euclidean(), (0.0, 0.0, 1.0));
     }

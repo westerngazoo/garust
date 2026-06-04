@@ -157,7 +157,7 @@ impl<T: Scalar> Mul for Conformal<T> {
 mod tests {
     use super::Conformal;
     use garust_core::Cga3;
-    use std::f64::consts::FRAC_PI_2;
+    use std::f64::consts::TAU;
 
     fn approx(a: (f64, f64, f64), b: (f64, f64, f64)) {
         assert!((a.0 - b.0).abs() < 1e-10, "x: {} vs {}", a.0, b.0);
@@ -191,7 +191,7 @@ mod tests {
     #[test]
     fn rotor_about_x_axis_sends_y_to_z() {
         // 90° in the e23 plane: (0,1,0) → (0,0,1).
-        let r = Conformal::rotor(FRAC_PI_2, Cga3::basis(0b0110));
+        let r = Conformal::rotor(TAU / 4.0, Cga3::basis(0b0110));
         let moved = r.apply(&Cga3::cga_point(0.0, 1.0, 0.0));
         approx(moved.to_euclidean(), (0.0, 0.0, 1.0));
     }

@@ -11,7 +11,7 @@
 use garust_core::{Algebra, Cga3, Multivector, Pga3};
 use garust_geo::{cga, pga, Conformal, Conformal3, Motor, Motor3};
 use proptest::prelude::*;
-use std::f64::consts::PI;
+use std::f64::consts::TAU;
 
 /// Coefficient-wise approximate equality, generic over the signature.
 fn close<A: Algebra>(a: &Multivector<A, f64>, b: &Multivector<A, f64>) -> bool {
@@ -49,7 +49,7 @@ prop_compose! {
     // translation (a general screw motion once composed).
     fn any_motor()(
         dx in -2.0f64..2.0, dy in -2.0f64..2.0, dz in -2.0f64..2.0,
-        angle in -PI..PI, axis in 0usize..3,
+        angle in 0.0f64..TAU, axis in 0usize..3,
     ) -> Motor3 {
         Motor::translator(dx, dy, dz) * Motor::rotor(angle, pga_axis(axis))
     }
@@ -60,7 +60,7 @@ prop_compose! {
     // translation, all about the origin.
     fn any_conformal()(
         dx in -2.0f64..2.0, dy in -2.0f64..2.0, dz in -2.0f64..2.0,
-        angle in -PI..PI, axis in 0usize..3, scale in 0.25f64..4.0,
+        angle in 0.0f64..TAU, axis in 0usize..3, scale in 0.25f64..4.0,
     ) -> Conformal3 {
         Conformal::translator(dx, dy, dz)
             * Conformal::rotor(angle, cga_axis(axis))

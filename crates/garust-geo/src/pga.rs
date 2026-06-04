@@ -190,7 +190,7 @@ mod tests {
     use super::{Line, Plane, Point};
     use crate::Motor;
     use garust_core::Pga3;
-    use std::f64::consts::FRAC_PI_2;
+    use std::f64::consts::TAU;
 
     fn approx_xyz(got: (f64, f64, f64), want: (f64, f64, f64)) {
         let (x, y, z) = got;
@@ -280,7 +280,7 @@ mod tests {
     #[test]
     fn transform_moves_a_point_like_the_motor() {
         // 90° about the x-axis sends (0,1,0) → (0,0,1).
-        let r = Motor::rotor(FRAC_PI_2, Pga3::basis(0b0110));
+        let r = Motor::rotor(TAU / 4.0, Pga3::basis(0b0110));
         let moved = Point::new(0.0, 1.0, 0.0).transform(&r);
         approx_xyz(moved.to_euclidean(), (0.0, 0.0, 1.0));
         // And it agrees with applying the motor to the raw blade.
