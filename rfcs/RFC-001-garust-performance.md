@@ -153,6 +153,36 @@ the `self * x * ~self` product form.
 The plain product `*` stays dense (its per-pair zero test would only slow the
 dense workloads it is tuned for); only the sandwich opts into sparsity. The
 hot path is now ~8–13× over the original baseline — comfortably past the
-numpy figure that motivated this RFC. Remaining phases (3: batch/SoA apply,
-4: stable `wide` SIMD) are optional, to be driven by an end-to-end VIGA
-re-measurement.
+numpy figure that motivated this RFC.
+
+## Appendix E — Phases 3 & 4: batch API and SoA SIMD
+
+**Phase 3** adds `Multivector::sandwich_each` and `Motor`/`Conformal::apply_each`,
+transforming a whole slice in place with the versor reversed once. Scalar, so
+the win is small (~4%), but it is the data-parallel shape phase 4 vectorizes.
+
+**Phase 4** adds `Motor`/`Conformal::apply_each_simd` behind a `simd` feature
+(the stable [`wide`](https://crates.io/crates/wide) crate — *not* nightly
+`core::simd`). The batch is laid out structure-of-arrays — coefficient `j` of
+four consecutive objects in one `f64x4` — and the sandwich runs with the
+versor's coefficients as broadcast scalars. No cross-lane shuffles: each lane
+is an independent object. The tail (< 4 objects) falls back to the scalar
+path, and a test checks the SIMD result matches the scalar batch.
+
+Batch of 1024 PGA points (criterion):
+
+| Variant                       | Time / 1024 pts | Per point |
+|-------------------------------|-----------------|-----------|
+| per-point `apply` loop        | ~81 µs          | ~79 ns    |
+| `apply_each` (scalar batch)   | ~80 µs          | ~78 ns    |
+| `apply_each_simd`             | ~47 µs          | ~46 ns    |
+
+~1.7× over the scalar batch on this aarch64/NEON machine (where `f64x4` is two
+128-bit halves); on x86 AVX, `f64x4` is native 256-bit, so closer to ~3–4×.
+Combined with phases 1–2, point-cloud throughput is ~14× the original
+baseline. `wide` stays out of the default dependency graph (verified with
+`cargo tree -e normal`), and `simd` composes with `no_std` + `libm`.
+
+### Status: phases 0–4 shipped. Phase order followed ROI × risk; remaining
+ideas (own tables for `wedge`/`regressive`, `f32` SIMD lanes, wider vectors)
+are left to a future round, driven by an end-to-end VIGA re-measurement.

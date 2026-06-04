@@ -30,6 +30,8 @@ serde = ["garust-core/serde", "garust-geo/serde"]
 # Opt-in bytemuck (Pod/Zeroable) for every type, forwarded to both member
 # crates. Off by default so the umbrella crate stays dependency-free.
 bytemuck = ["garust-core/bytemuck", "garust-geo/bytemuck"]
+# Opt-in SIMD batch transforms, forwarded to garust-geo. Off by default.
+simd = ["garust-geo/simd"]
 
 [dependencies]
 # Inherit `default-features = false` from `[workspace.dependencies]`, so the
@@ -88,3 +90,7 @@ bytemuck = { version = "1", default-features = false }
 # Pure-Rust float math for `no_std` builds, behind the `libm` feature (an
 # alternative to the default `std` math backend). Itself dependency-free.
 libm = "0.2"
+
+# Portable, stable-Rust SIMD for the optional `simd` feature's batch
+# transforms. Off by default; `default-features = false` keeps it no_std-ready.
+wide = { version = "0.7", default-features = false }

@@ -72,6 +72,17 @@ fn batch_apply(c: &mut Criterion) {
             BatchSize::SmallInput,
         )
     });
+    #[cfg(feature = "simd")]
+    group.bench_function("apply_each_simd", |bn| {
+        bn.iter_batched(
+            || points.clone(),
+            |mut buf| {
+                m.apply_each_simd(&mut buf);
+                buf
+            },
+            BatchSize::SmallInput,
+        )
+    });
     group.finish();
 }
 

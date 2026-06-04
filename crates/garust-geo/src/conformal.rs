@@ -122,6 +122,18 @@ impl<T: Scalar> Conformal<T> {
     }
 }
 
+#[cfg(feature = "simd")]
+impl Conformal<f64> {
+    /// SIMD batch apply: transform every CGA object in `xs` in place, four
+    /// objects per SIMD vector (structure-of-arrays). Behind the `simd`
+    /// feature; bit-faithful to [`Conformal::apply_each`] (the tail that
+    /// doesn't fill a vector uses the scalar path), with several times the
+    /// throughput for large point clouds.
+    pub fn apply_each_simd(&self, xs: &mut [Cga<f64>]) {
+        crate::simd::sandwich_each_cga(&self.versor, xs);
+    }
+}
+
 impl<T: Real> Conformal<T> {
     /// A pure translation by `(dx, dy, dz)`.
     ///

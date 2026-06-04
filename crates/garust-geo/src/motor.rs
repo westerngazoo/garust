@@ -110,6 +110,18 @@ impl<T: Scalar> Motor<T> {
     }
 }
 
+#[cfg(feature = "simd")]
+impl Motor<f64> {
+    /// SIMD batch apply: transform every PGA object in `xs` in place, four
+    /// objects per SIMD vector (structure-of-arrays). Behind the `simd`
+    /// feature; bit-faithful to [`Motor::apply_each`] (the tail that doesn't
+    /// fill a vector uses the scalar path), but several times the throughput
+    /// for large point clouds.
+    pub fn apply_each_simd(&self, xs: &mut [Pga<f64>]) {
+        crate::simd::sandwich_each_pga(&self.versor, xs);
+    }
+}
+
 impl<T: Real> Motor<T> {
     /// A pure translation by `(dx, dy, dz)`.
     ///
