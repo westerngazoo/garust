@@ -75,6 +75,21 @@ impl<A: Algebra, T: Scalar> Multivector<A, T> {
         self.sparse_product(x).sparse_product(&rev)
     }
 
+    /// Sandwich `self` over every element of `xs`, in place — the batch
+    /// form of [`Multivector::sandwich`] for transforming a whole point
+    /// cloud (or set of lines/planes) by one versor.
+    ///
+    /// The reverse `~self` is computed once and reused across the batch, so
+    /// this is cheaper than calling [`Multivector::sandwich`] in a loop
+    /// while giving bit-identical results. It is also the natural shape for
+    /// vectorization: each element's transform is independent.
+    pub fn sandwich_each(&self, xs: &mut [Self]) {
+        let rev = self.reverse();
+        for x in xs.iter_mut() {
+            *x = self.sparse_product(x).sparse_product(&rev);
+        }
+    }
+
     /// Geometric product that skips blade pairs with a zero coefficient on
     /// either side. Bit-identical to `*` (a zero coefficient contributes a
     /// `0` term either way), but for the graded, mostly-zero operands of a

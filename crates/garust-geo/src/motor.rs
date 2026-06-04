@@ -78,6 +78,15 @@ impl<T: Scalar> Motor<T> {
         self.versor.sandwich(x)
     }
 
+    /// Apply the motion to every object in `xs`, in place — the batch form
+    /// of [`Motor::apply`] for moving a whole point cloud (or set of lines
+    /// or planes) by one motor. The versor is reversed once and reused
+    /// across the batch, so this is cheaper than calling [`Motor::apply`] in
+    /// a loop, with identical results.
+    pub fn apply_each(&self, xs: &mut [Pga<T>]) {
+        self.versor.sandwich_each(xs);
+    }
+
     /// Compose two motions: `self.compose(&rhs)` does `rhs` first, then
     /// `self`, exactly like function composition. Equals `self * rhs`.
     pub fn compose(&self, rhs: &Self) -> Self {
@@ -276,5 +285,20 @@ mod tests {
         // Spot-check the values: R-then-T gives (0,3,1); T-then-R gives (0,0,4).
         approx_eq(&tr.coeffs, &Pga3::point(0.0, 3.0, 1.0).coeffs, 1e-12);
         approx_eq(&rt.coeffs, &Pga3::point(0.0, 0.0, 4.0).coeffs, 1e-12);
+    }
+
+    #[test]
+    fn apply_each_matches_apply_per_element() {
+        let m = Motor::translator(1.0, -2.0, 0.5) * Motor::rotor(0.9, Pga3::basis(0b1010));
+        let pts = [
+            Pga3::point(1.0, 2.0, 3.0),
+            Pga3::point(-1.0, 0.5, 2.0),
+            Pga3::point(0.0, 0.0, 0.0),
+        ];
+        let mut batch = pts;
+        m.apply_each(&mut batch);
+        for (src, got) in pts.iter().zip(batch.iter()) {
+            approx_eq(&got.coeffs, &m.apply(src).coeffs, 1e-12);
+        }
     }
 }

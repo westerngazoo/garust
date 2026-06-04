@@ -12,7 +12,7 @@
 use std::f64::consts::TAU;
 use std::hint::black_box;
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use garust_core::{Cga3, Pga3};
 use garust_geo::{Conformal, Motor};
 
@@ -42,5 +42,44 @@ fn versor_compose(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, motor_apply, conformal_apply, versor_compose);
+fn batch_apply(c: &mut Criterion) {
+    // Transform a 1024-point cloud by one motor: batch vs a per-point loop.
+    let m = Motor::translator(1.0, 2.0, 3.0) * Motor::rotor(TAU / 8.0, Pga3::basis(0b0110));
+    let points: Vec<_> = (0..1024)
+        .map(|i| Pga3::point(i as f64 * 0.1, (i % 7) as f64, -(i as f64) * 0.05))
+        .collect();
+
+    let mut group = c.benchmark_group("motor_apply_batch_1024");
+    group.bench_function("apply_each", |bn| {
+        bn.iter_batched(
+            || points.clone(),
+            |mut buf| {
+                m.apply_each(&mut buf);
+                buf
+            },
+            BatchSize::SmallInput,
+        )
+    });
+    group.bench_function("loop", |bn| {
+        bn.iter_batched(
+            || points.clone(),
+            |mut buf| {
+                for x in buf.iter_mut() {
+                    *x = m.apply(x);
+                }
+                buf
+            },
+            BatchSize::SmallInput,
+        )
+    });
+    group.finish();
+}
+
+criterion_group!(
+    benches,
+    motor_apply,
+    conformal_apply,
+    versor_compose,
+    batch_apply
+);
 criterion_main!(benches);

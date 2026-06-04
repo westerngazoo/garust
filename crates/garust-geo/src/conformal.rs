@@ -90,6 +90,15 @@ impl<T: Scalar> Conformal<T> {
         self.versor.sandwich(x)
     }
 
+    /// Apply the transformation to every object in `xs`, in place — the
+    /// batch form of [`Conformal::apply`] for transforming a whole point
+    /// cloud (or set of spheres/planes) by one versor. The versor is
+    /// reversed once and reused across the batch, so this is cheaper than
+    /// calling [`Conformal::apply`] in a loop, with identical results.
+    pub fn apply_each(&self, xs: &mut [Cga<T>]) {
+        self.versor.sandwich_each(xs);
+    }
+
     /// Compose two transformations: `self.compose(&rhs)` does `rhs`
     /// first, then `self`, like function composition. Equals `self * rhs`.
     pub fn compose(&self, rhs: &Self) -> Self {
