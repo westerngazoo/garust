@@ -4,7 +4,7 @@ use core::fmt;
 use core::ops::{Add, AddAssign, Mul, Neg, Sub, SubAssign};
 
 use crate::algebra::{Algebra, BladeStore};
-use crate::scalar::Scalar;
+use crate::scalar::{Real, Scalar};
 
 /// A multivector in the Clifford algebra `A`, with coefficients of type
 /// `T`.
@@ -108,8 +108,11 @@ impl<A: Algebra, T: Scalar> Multivector<A, T> {
     /// comparing. Rotor sandwiches and exp products in particular leak
     /// `~1e-16`-magnitude noise into blades that should be exactly
     /// zero by symmetry; passing `1e-10` knocks those out while
-    /// leaving any real-magnitude coefficient untouched.
-    pub fn cleaned(&self, tol: T) -> Self {
+    /// leaving any real-magnitude coefficient untouched. `tol` is in the
+    /// real [`Magnitude`](Scalar::Magnitude) type, so it stays an ordinary
+    /// `f64`/`f32` even when the coefficient field (e.g. `Complex`) is not
+    /// itself ordered.
+    pub fn cleaned(&self, tol: T::Magnitude) -> Self {
         let mut out = *self;
         for i in 0..A::DIM {
             if out.coeffs[i].abs() < tol {
@@ -265,7 +268,7 @@ impl_left_scalar_mul!(f64);
 // For PGA-conventional output (null generator named `e0`, written first
 // in each blade) use [`Multivector::display_pga`].
 
-impl<A: Algebra, T: Scalar> fmt::Display for Multivector<A, T> {
+impl<A: Algebra, T: Real> fmt::Display for Multivector<A, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let n = A::N;
         let mut first = true;

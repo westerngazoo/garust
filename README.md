@@ -152,15 +152,58 @@ name the full form with a signature marker: `Multivector::<Vga3Sig, S>`.
 
 ## Design notes
 
-- **Zero dependencies.** Just the standard library.
+- **Zero dependencies by default.** The crates are `#![no_std]` and
+  allocation-free; the only way to pull anything in is an opt-in feature
+  (see below).
 - **Metric-independent duality.** The complements are combinatorial, not
   `M·I⁻¹`, so they stay well-defined in degenerate algebras like PGA
   where the pseudoscalar is null.
-- **`O(DIM²)` products.** Fine for the algebras a human writes by hand
-  (≤ 1024 ops for `Cga3`); not tuned for large-`N` work.
+- **Fast products.** A compile-time Cayley table (`Algebra::CAYLEY`) drives
+  a branchless geometric product; the sandwich (and so `Motor`/`Conformal`
+  transforms) uses a sparse path, with an optional SoA SIMD batch under the
+  `simd` feature. Still dense `O(DIM²)` in the worst case — fine for the
+  algebras a human writes by hand (≤ 1024 blade pairs for `Cga3`).
 - **One indexing convention.** Blade index = bitmask of its generators;
   `coeffs[0]` is the scalar. Generators partition by index into the `+1`,
   `−1`, then `0` groups. See the `signature` module docs for details.
+
+## Building & MSRV
+
+The **library**'s minimum supported Rust version is **1.79**, and on the
+default feature set it builds with no dependencies. Verify it the way CI
+does — with dev-dependencies excluded from resolution, since they never
+reach consumers:
+
+```sh
+cargo hack check --no-dev-deps --workspace --exclude garust-derive --lib
+```
+
+Building the **test suite and benchmarks**, on the other hand, needs a
+**recent cargo (≥ 1.85)**: the dev-dependencies (`proptest`, `criterion`)
+pull in transitive crates that use the 2024 edition, which older cargo
+cannot parse. This does **not** affect anyone who *depends on* `garust` —
+dev-dependencies are never passed on to downstream crates. In short:
+
+- **Depending on `garust`** (any cargo ≥ 1.79): just works, zero deps.
+- **Running `cargo test` / `cargo bench` in this repo:** use a current
+  stable toolchain.
+
+### Cargo features
+
+All are off by default except `std`:
+
+- `std` *(default)* — use the standard library's float math; the crates are
+  otherwise `#![no_std]` and allocation-free.
+- `libm` — supply the float transcendentals via [`libm`] for `no_std`
+  (enable exactly one of `std` / `libm` to use `f32` / `f64`).
+- `derive` — the `#[derive(Algebra)]` proc-macro.
+- `serde` — `Serialize` / `Deserialize` for every type.
+- `bytemuck` — `Pod` / `Zeroable` for zero-copy reinterpretation (GPU buffers).
+- `simd` — SoA SIMD batch transforms (`Motor` / `Conformal::apply_each_simd`),
+  via the stable [`wide`] crate.
+
+[`libm`]: https://crates.io/crates/libm
+[`wide`]: https://crates.io/crates/wide
 
 ## License
 

@@ -10,16 +10,20 @@
 //!
 //! The split is deliberate:
 //!
-//! - [`Scalar`] is the **ring/field interface**: the arithmetic, the
-//!   `ZERO`/`ONE` identities, ordering, `abs`, and a conversion from
-//!   `f64` for tolerances and literals. Everything needed for the
-//!   geometric product, the derived products, the involutions, the
-//!   versor inverse, and `Display`.
-//! - [`Real`] adds the **transcendental functions** (`sqrt`, `sin`,
-//!   `cos`, `sinh`, `cosh`) needed only by
-//!   [`Multivector::exp`](crate::Multivector::exp). Keeping these out of
-//!   `Scalar` means a coefficient type that can't define `sin` (a
-//!   rational, say) can still drive the whole product algebra.
+//! - [`Scalar`] is the **field interface**: the arithmetic, the `ZERO`/`ONE`
+//!   identities, a conversion from `f64`, and a real-valued
+//!   [`abs`](Scalar::abs) whose result type [`Magnitude`](Scalar::Magnitude)
+//!   carries the ordering. It deliberately does *not* require the field to be
+//!   ordered, so `Complex<f64>` and dual numbers — which have no order but do
+//!   have a real modulus — can be multivector coefficients. Everything the
+//!   geometric product, the derived products, the involutions, and the versor
+//!   inverse need lives here.
+//! - [`Real`] adds **ordering** (`PartialOrd`) and the **transcendental
+//!   functions** (`sqrt`, `sin`, `cos`, `sinh`, `cosh`, `ln`) used by
+//!   [`Multivector::exp`](crate::Multivector::exp) and the norm / `Display`
+//!   paths, and is its own magnitude (`Magnitude = Self`). Keeping these off
+//!   `Scalar` means a coefficient type that can't be ordered, or can't define
+//!   `sin`, can still drive the whole product algebra.
 
 use core::fmt;
 use core::ops::{Add, AddAssign, Div, Mul, MulAssign, Neg, Sub, SubAssign};
@@ -34,7 +38,6 @@ pub trait Scalar:
     + fmt::Debug
     + fmt::Display
     + PartialEq
-    + PartialOrd
     + Add<Output = Self>
     + Sub<Output = Self>
     + Mul<Output = Self>
@@ -44,6 +47,16 @@ pub trait Scalar:
     + SubAssign
     + MulAssign
 {
+    /// The real, ordered magnitude type returned by [`abs`](Scalar::abs).
+    ///
+    /// For an ordered real scalar it is `Self` — exactly what [`Real`]
+    /// requires. For a field with no natural order, like `Complex<f64>`
+    /// (whose modulus is real), it is the underlying real type, so magnitudes
+    /// can still be compared against tolerances even though the field cannot.
+    /// This is the split that lets `Complex<f64>` and dual numbers be
+    /// multivector coefficients.
+    type Magnitude: Real;
+
     /// The additive identity.
     const ZERO: Self;
     /// The multiplicative identity.
@@ -51,13 +64,21 @@ pub trait Scalar:
     /// Convert from an `f64`. Used for tolerances and scalar literals.
     /// May lose precision (e.g. for `f32`); that's expected.
     fn from_f64(x: f64) -> Self;
-    /// Absolute value.
-    fn abs(self) -> Self;
+    /// Real-valued magnitude (absolute value / modulus), used for tolerance
+    /// and zero-threshold comparisons.
+    fn abs(self) -> Self::Magnitude;
 }
 
-/// A [`Scalar`] that also provides the transcendental functions used by
-/// [`Multivector::exp`](crate::Multivector::exp).
-pub trait Real: Scalar {
+/// An *ordered, real* [`Scalar`] that also provides the transcendental
+/// functions used by [`Multivector::exp`](crate::Multivector::exp).
+///
+/// `Real` is the magnitude end of the [`Scalar`] split: it is comparable
+/// (`PartialOrd`) and is its own [`Magnitude`](Scalar::Magnitude)
+/// (`Scalar<Magnitude = Self>`), so norms and tolerances stay in one type.
+/// `f32` and `f64` implement it; `Complex<f64>` does not (it has no order),
+/// which is exactly why the ordering-dependent, transcendental operations
+/// live here rather than on [`Scalar`].
+pub trait Real: Scalar<Magnitude = Self> + PartialOrd {
     /// Square root.
     fn sqrt(self) -> Self;
     /// Sine (radians).
@@ -81,6 +102,7 @@ pub trait Real: Scalar {
 macro_rules! impl_scalar_real {
     ($t:ty, $abs:path, $sqrt:path, $sin:path, $cos:path, $sinh:path, $cosh:path, $ln:path) => {
         impl Scalar for $t {
+            type Magnitude = $t;
             const ZERO: Self = 0.0;
             const ONE: Self = 1.0;
             #[inline]
@@ -88,7 +110,7 @@ macro_rules! impl_scalar_real {
                 x as $t
             }
             #[inline]
-            fn abs(self) -> Self {
+            fn abs(self) -> Self::Magnitude {
                 $abs(self)
             }
         }
@@ -180,10 +202,12 @@ mod float_backend {
     );
 }
 
-/// Returns the larger of two scalars (`PartialOrd`-based, NaN-naive).
-/// A small helper since `Ord::max` isn't available for floats.
+/// Returns the larger of two ordered values (`PartialOrd`-based, NaN-naive).
+/// A small helper since `Ord::max` isn't available for floats. Called on
+/// magnitudes ([`Scalar::Magnitude`]), which are always [`Real`] and hence
+/// ordered — so it works even when the coefficient field itself is not.
 #[inline]
-pub(crate) fn max<T: Scalar>(a: T, b: T) -> T {
+pub(crate) fn max<T: PartialOrd>(a: T, b: T) -> T {
     if a > b {
         a
     } else {

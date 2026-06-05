@@ -30,7 +30,7 @@
 use core::fmt;
 
 use crate::multivector::Multivector;
-use crate::scalar::Scalar;
+use crate::scalar::{Real, Scalar};
 use crate::Pga3Sig;
 
 /// PGA constructors are defined only for the `Cl(3, 0, 1)` signature, so
@@ -102,7 +102,7 @@ pub struct PgaDisplay<T: Scalar> {
     mv: Multivector<Pga3Sig, T>,
 }
 
-impl<T: Scalar> fmt::Display for PgaDisplay<T> {
+impl<T: Real> fmt::Display for PgaDisplay<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut first = true;
         for i in 0..16 {
