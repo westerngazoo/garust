@@ -28,7 +28,10 @@ impl<A: Algebra, T: Scalar> Multivector<A, T> {
     pub fn try_versor_inverse(&self) -> Option<Self> {
         let prod = *self * self.reverse();
         let scalar = prod.scalar_part();
-        let tol = T::from_f64(1e-10) * max(scalar.abs(), T::ONE);
+        // The tolerance lives in the real magnitude type, so this works even
+        // when the coefficient field (e.g. Complex) has no order of its own.
+        let one = <T::Magnitude as Scalar>::ONE;
+        let tol = <T::Magnitude as Scalar>::from_f64(1e-10) * max(scalar.abs(), one);
         for i in 1..A::DIM {
             if prod.coeffs[i].abs() > tol {
                 return None;

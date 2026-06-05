@@ -148,7 +148,7 @@ impl<T: Scalar> Sphere<T> {
 
     /// Whether `p` lies on this sphere, within `tol` of the exact
     /// zero-[`incidence`](Sphere::incidence) condition.
-    pub fn contains(&self, p: &Point<T>, tol: T) -> bool {
+    pub fn contains(&self, p: &Point<T>, tol: T::Magnitude) -> bool {
         self.incidence(p).abs() <= tol
     }
 }
@@ -172,7 +172,7 @@ impl<T: Scalar> Plane<T> {
 
     /// Whether `p` lies on this plane, within `tol` of the exact
     /// zero-[`incidence`](Plane::incidence) condition.
-    pub fn contains(&self, p: &Point<T>, tol: T) -> bool {
+    pub fn contains(&self, p: &Point<T>, tol: T::Magnitude) -> bool {
         self.incidence(p).abs() <= tol
     }
 }
