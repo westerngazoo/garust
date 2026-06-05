@@ -56,6 +56,7 @@
 extern crate std;
 
 pub mod algebra;
+pub mod autodiff;
 pub mod cga;
 pub mod dual;
 pub mod involutions;
@@ -78,6 +79,7 @@ mod serde_impls;
 mod bytemuck_impls;
 
 pub use algebra::{Algebra, BladeStore};
+pub use autodiff::Dual;
 pub use multivector::Multivector;
 pub use scalar::{Real, Scalar};
 
