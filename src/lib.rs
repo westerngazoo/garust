@@ -131,7 +131,7 @@
 // --- Modules (re-exported so `garust::signature`, … keep resolving) ------
 #[doc(no_inline)]
 pub use garust_core::{
-    algebra, dual, involutions, multivector, products, scalar, signature, transform,
+    algebra, autodiff, dual, involutions, multivector, products, scalar, signature, transform,
 };
 // `pga` and `cga` come from the geometry layer: each bundles that model's
 // typed objects (Point/Line/Plane, Point/Sphere/Plane), and `pga` also
@@ -142,8 +142,8 @@ pub use garust_geo::{cga, conformal, motor, pga};
 // --- The kernel: traits, the multivector, signatures, and aliases --------
 #[doc(inline)]
 pub use garust_core::{
-    Algebra, BladeStore, Cga3, Cga3Sig, Cga3f, Multivector, Pga3, Pga3Sig, Pga3f, Real, Scalar,
-    Sta, StaSig, Staf, Vga2, Vga2Sig, Vga2f, Vga3, Vga3Sig, Vga3f,
+    Algebra, BladeStore, Cga3, Cga3Sig, Cga3f, Dual, Multivector, Pga3, Pga3Sig, Pga3f, Real,
+    Scalar, Sta, StaSig, Staf, Vga2, Vga2Sig, Vga2f, Vga3, Vga3Sig, Vga3f,
 };
 
 // --- The typed geometry layer --------------------------------------------
