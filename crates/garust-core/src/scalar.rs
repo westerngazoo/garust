@@ -28,11 +28,14 @@
 use core::fmt;
 use core::ops::{Add, AddAssign, Div, Mul, MulAssign, Neg, Sub, SubAssign};
 
-/// An ordered field suitable as a multivector coefficient type.
+/// A field suitable as a multivector coefficient type.
 ///
-/// Implemented for `f32` and `f64`. The required `AddAssign` /
-/// `SubAssign` / `MulAssign` bounds let the linear-algebra loops stay
-/// written in their natural `+=` / `-=` form.
+/// Implemented for `f32` and `f64`; also satisfiable by `Complex<f64>`, dual
+/// numbers, and exact fields (a finite field like GF(2), the rationals, …) —
+/// the coefficient field need not be ordered, only its
+/// [`Magnitude`](Scalar::Magnitude). The required `AddAssign` / `SubAssign` /
+/// `MulAssign` bounds let the linear-algebra loops stay written in their
+/// natural `+=` / `-=` form.
 pub trait Scalar:
     Copy
     + fmt::Debug
@@ -47,15 +50,18 @@ pub trait Scalar:
     + SubAssign
     + MulAssign
 {
-    /// The real, ordered magnitude type returned by [`abs`](Scalar::abs).
+    /// The ordered magnitude type returned by [`abs`](Scalar::abs), used for
+    /// tolerance and zero-threshold comparisons.
     ///
-    /// For an ordered real scalar it is `Self` — exactly what [`Real`]
-    /// requires. For a field with no natural order, like `Complex<f64>`
-    /// (whose modulus is real), it is the underlying real type, so magnitudes
-    /// can still be compared against tolerances even though the field cannot.
-    /// This is the split that lets `Complex<f64>` and dual numbers be
-    /// multivector coefficients.
-    type Magnitude: Real;
+    /// It need only be an *ordered* [`Scalar`] (`Scalar + PartialOrd`), not a
+    /// [`Real`] one — so the coefficient field itself may be unordered
+    /// (`Complex<f64>`, whose magnitude is the real modulus) or exact
+    /// (integers, a finite field like GF(2), the rationals — each its own
+    /// magnitude). For an ordered real scalar it is simply `Self`. This is the
+    /// relaxation that lets fields beyond `f32`/`f64` be coefficients: the
+    /// product, wedge, grades, and involutions are pure ring arithmetic and
+    /// never touch ordering, so only the tolerance-based helpers care.
+    type Magnitude: Scalar + PartialOrd;
 
     /// The additive identity.
     const ZERO: Self;
