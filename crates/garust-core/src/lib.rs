@@ -60,6 +60,7 @@ pub mod autodiff;
 pub mod calculus;
 pub mod cga;
 pub mod dual;
+pub mod dynamics;
 pub mod involutions;
 pub mod multivector;
 pub mod pga;
@@ -82,6 +83,7 @@ mod bytemuck_impls;
 pub use algebra::{Algebra, BladeStore};
 pub use autodiff::Dual;
 pub use calculus::{multivector_derivative, partials};
+pub use dynamics::Phase;
 pub use multivector::Multivector;
 pub use scalar::{Real, Ring, Scalar};
 
