@@ -1,19 +1,18 @@
-//! Proof that the relaxed `Scalar::Magnitude` bound (`Scalar + PartialOrd`,
-//! no longer `Real`) admits **exact** and **finite-field** coefficients —
-//! not just `f32`/`f64`/`Complex`/`Dual`.
+//! Proof that the `Ring` / `Scalar` split admits **exact** and **finite-field**
+//! coefficients — not just `f32`/`f64`/`Complex`/`Dual`.
 //!
 //! The geometric product, wedge, grades, and involutions are pure ring
 //! arithmetic — they never divide, take a norm, or compare for order — so
-//! they work over any field. Two external coefficient types demonstrate it:
+//! they are defined for any [`Ring`]. Two external coefficient types show it:
 //!
-//! * `Gf2` — the finite field GF(2). Over it the metric signs `±1` collapse
-//!   (`−1 = 1`), so generators *commute* and nilpotents appear.
-//! * `Zint` — exact integers `ℤ`. Reconstructions are bit-exact, no float
-//!   dust. (`ℤ` is a ring, not a field; its truncating `Div` makes the
-//!   field-only ops — `versor_inverse`, `norm` — meaningless, so just don't
-//!   call them. The product/wedge/grade core is exact.)
-//!
-//! Neither is `Real`, so neither gets `norm`/`exp`/`Display` on multivectors.
+//! * `Gf2` — the finite field GF(2). It *is* a field (it has division), so it
+//!   implements both [`Ring`] and [`Scalar`]. Over it the metric signs `±1`
+//!   collapse (`−1 = 1`), so generators commute and nilpotents appear.
+//! * `Zint` — exact integers `ℤ`, a *ring, not a field*. It implements **only
+//!   [`Ring`]** — no `Div`, `abs`, or `Display`. The product/wedge/grade are
+//!   bit-exact; the field-only ops (`versor_inverse`, `norm`, `cleaned`) are
+//!   simply *not callable* on `Multivector<_, Zint>` — a compile error, which
+//!   is exactly the footgun the split removes.
 
 // In GF(2), addition *is* XOR and multiplication *is* AND — so the lint that
 // flags "suspicious" operators in arithmetic impls is a false positive here.
@@ -22,9 +21,9 @@
 use core::fmt;
 use core::ops::{Add, AddAssign, Div, Mul, MulAssign, Neg, Sub, SubAssign};
 
-use garust_core::{Multivector, Scalar, Vga2Sig};
+use garust_core::{Multivector, Ring, Scalar, Vga2Sig};
 
-// --- GF(2): the two-element finite field --------------------------------
+// --- GF(2): the two-element finite field (a field → Ring + Scalar) --------
 
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
 struct Gf2(u8);
@@ -78,10 +77,12 @@ impl MulAssign for Gf2 {
         *self = *self * o;
     }
 }
-impl Scalar for Gf2 {
-    type Magnitude = Gf2;
+impl Ring for Gf2 {
     const ZERO: Self = Gf2(0);
     const ONE: Self = Gf2(1);
+}
+impl Scalar for Gf2 {
+    type Magnitude = Gf2;
     fn from_f64(x: f64) -> Self {
         Gf2((x as i64).rem_euclid(2) as u8)
     }
@@ -105,15 +106,10 @@ fn finite_field_gf2_through_the_product() {
     assert_eq!((e1 * e1).scalar_part(), Gf2(1));
 }
 
-// --- ℤ: exact integers ---------------------------------------------------
+// --- ℤ: exact integers (a ring, not a field → Ring only) -----------------
 
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct Zint(i64);
-impl fmt::Display for Zint {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
 impl Add for Zint {
     type Output = Self;
     fn add(self, o: Self) -> Self {
@@ -130,12 +126,6 @@ impl Mul for Zint {
     type Output = Self;
     fn mul(self, o: Self) -> Self {
         Zint(self.0 * o.0)
-    }
-}
-impl Div for Zint {
-    type Output = Self;
-    fn div(self, o: Self) -> Self {
-        Zint(self.0 / o.0) // truncating: ℤ is a ring, not a field
     }
 }
 impl Neg for Zint {
@@ -159,16 +149,12 @@ impl MulAssign for Zint {
         *self = *self * o;
     }
 }
-impl Scalar for Zint {
-    type Magnitude = Zint;
+// Ring only — no Div, so `Zint` is *not* a `Scalar`. The product/wedge/grade
+// below work; `versor_inverse`/`norm`/`cleaned` on a `Multivector<_, Zint>`
+// would not even compile.
+impl Ring for Zint {
     const ZERO: Self = Zint(0);
     const ONE: Self = Zint(1);
-    fn from_f64(x: f64) -> Self {
-        Zint(x as i64)
-    }
-    fn abs(self) -> Zint {
-        Zint(self.0.abs())
-    }
 }
 
 #[test]

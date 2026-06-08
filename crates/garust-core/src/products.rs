@@ -27,10 +27,10 @@
 
 use crate::algebra::Algebra;
 use crate::multivector::Multivector;
-use crate::scalar::Scalar;
+use crate::scalar::Ring;
 use crate::signature::{blade_product, grade_of, swap_sign};
 
-impl<A: Algebra, T: Scalar> Multivector<A, T> {
+impl<A: Algebra, T: Ring> Multivector<A, T> {
     /// Grade-`k` projection `⟨M⟩_k`. Zeros every coefficient whose
     /// blade has popcount different from `k`.
     pub fn grade(&self, k: usize) -> Self {

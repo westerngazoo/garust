@@ -15,13 +15,13 @@ use bytemuck::{Pod, Zeroable};
 
 use crate::algebra::Algebra;
 use crate::multivector::Multivector;
-use crate::scalar::Scalar;
+use crate::scalar::Ring;
 
 // SAFETY: `Multivector` is `#[repr(transparent)]` over its sole field
 // `coeffs: A::Blades<T>`. When that field is `Zeroable`, an all-zero bit
 // pattern is the valid zero multivector, so the transparent wrapper is
 // `Zeroable` too.
-unsafe impl<A: Algebra, T: Scalar> Zeroable for Multivector<A, T> where A::Blades<T>: Zeroable {}
+unsafe impl<A: Algebra, T: Ring> Zeroable for Multivector<A, T> where A::Blades<T>: Zeroable {}
 
 // SAFETY: with `#[repr(transparent)]`, `Multivector<A, T>` has the same
 // size, alignment, and (absence of) padding as its `A::Blades<T>` field.
@@ -29,7 +29,7 @@ unsafe impl<A: Algebra, T: Scalar> Zeroable for Multivector<A, T> where A::Blade
 // the wrapper. `Copy` holds unconditionally; the `'static` bounds satisfy
 // `Pod`'s `'static` supertrait (every `Algebra` marker and every numeric
 // scalar is `'static` in practice).
-unsafe impl<A: Algebra + 'static, T: Scalar + 'static> Pod for Multivector<A, T> where
+unsafe impl<A: Algebra + 'static, T: Ring + 'static> Pod for Multivector<A, T> where
     A::Blades<T>: Pod
 {
 }

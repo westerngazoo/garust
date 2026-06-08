@@ -78,7 +78,7 @@ fn expand(ast: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
             const P: usize = #p;
             const Q: usize = #q;
             const R: usize = #r;
-            type Blades<T: #krate::Scalar> = [T; 1 << (#p + #q + #r)];
+            type Blades<T: #krate::Ring> = [T; 1 << (#p + #q + #r)];
             const CAYLEY: &'static [#krate::signature::CayleyEntry] =
                 &#krate::signature::cayley_table::<
                     { (1usize << (#p + #q + #r)) * (1usize << (#p + #q + #r)) },

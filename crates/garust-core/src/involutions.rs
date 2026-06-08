@@ -27,10 +27,10 @@
 
 use crate::algebra::Algebra;
 use crate::multivector::Multivector;
-use crate::scalar::{Real, Scalar};
+use crate::scalar::{Real, Ring};
 use crate::signature::grade_of;
 
-impl<A: Algebra, T: Scalar> Multivector<A, T> {
+impl<A: Algebra, T: Ring> Multivector<A, T> {
     /// Reverse `~M`. Reverses the order of generators in every blade,
     /// which flips the sign whenever the grade `k` satisfies
     /// `k(k − 1) / 2 ≡ 1 (mod 2)` — grades 2, 3, 6, 7, ...

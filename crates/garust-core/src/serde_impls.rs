@@ -20,9 +20,9 @@ use serde::ser::{Serialize, SerializeSeq, Serializer};
 
 use crate::algebra::{Algebra, BladeStore};
 use crate::multivector::Multivector;
-use crate::scalar::Scalar;
+use crate::scalar::Ring;
 
-impl<A: Algebra, T: Scalar + Serialize> Serialize for Multivector<A, T> {
+impl<A: Algebra, T: Ring + Serialize> Serialize for Multivector<A, T> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -36,7 +36,7 @@ impl<A: Algebra, T: Scalar + Serialize> Serialize for Multivector<A, T> {
     }
 }
 
-impl<'de, A: Algebra, T: Scalar + Deserialize<'de>> Deserialize<'de> for Multivector<A, T> {
+impl<'de, A: Algebra, T: Ring + Deserialize<'de>> Deserialize<'de> for Multivector<A, T> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -45,7 +45,7 @@ impl<'de, A: Algebra, T: Scalar + Deserialize<'de>> Deserialize<'de> for Multive
             marker: PhantomData<(A, T)>,
         }
 
-        impl<'de, A: Algebra, T: Scalar + Deserialize<'de>> Visitor<'de> for CoeffsVisitor<A, T> {
+        impl<'de, A: Algebra, T: Ring + Deserialize<'de>> Visitor<'de> for CoeffsVisitor<A, T> {
             type Value = Multivector<A, T>;
 
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {

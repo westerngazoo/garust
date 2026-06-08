@@ -8,65 +8,74 @@
 //! ordered field — fixed-point types, `f16` wrappers, dual numbers for
 //! autodiff — can opt in by implementing these traits.
 //!
-//! The split is deliberate:
+//! The split is deliberate, in three layers:
 //!
-//! - [`Scalar`] is the **field interface**: the arithmetic, the `ZERO`/`ONE`
-//!   identities, a conversion from `f64`, and a real-valued
-//!   [`abs`](Scalar::abs) whose result type [`Magnitude`](Scalar::Magnitude)
-//!   carries the ordering. It deliberately does *not* require the field to be
-//!   ordered, so `Complex<f64>` and dual numbers — which have no order but do
-//!   have a real modulus — can be multivector coefficients. Everything the
-//!   geometric product, the derived products, the involutions, and the versor
-//!   inverse need lives here.
-//! - [`Real`] adds **ordering** (`PartialOrd`) and the **transcendental
-//!   functions** (`sqrt`, `sin`, `cos`, `sinh`, `cosh`, `ln`) used by
+//! - [`Ring`] is the **division-free core**: `+`, `−`, `×`, and the
+//!   `ZERO`/`ONE` identities. The geometric product, the derived products,
+//!   grade projection, and the involutions need only this — so exact,
+//!   division-free types (the integers `ℤ`, …) can be coefficients, and you
+//!   simply can't take a versor inverse over them (a compile error, by
+//!   design, not a silent wrong answer).
+//! - [`Scalar`] adds **division**, an `f64` conversion, and a real-valued
+//!   [`abs`](Scalar::abs) whose type [`Magnitude`](Scalar::Magnitude) carries
+//!   the ordering. It is the field interface — what the versor inverse and
+//!   normalization require. The field itself need not be ordered, so
+//!   `Complex<f64>` and dual numbers (no order, but a real modulus) qualify.
+//! - [`Real`] adds **ordering** (`PartialOrd`) and the **transcendentals**
+//!   (`sqrt`, `sin`, `cos`, `sinh`, `cosh`, `ln`) used by
 //!   [`Multivector::exp`](crate::Multivector::exp) and the norm / `Display`
-//!   paths, and is its own magnitude (`Magnitude = Self`). Keeping these off
-//!   `Scalar` means a coefficient type that can't be ordered, or can't define
-//!   `sin`, can still drive the whole product algebra.
+//!   paths, and is its own magnitude (`Magnitude = Self`).
 
 use core::fmt;
 use core::ops::{Add, AddAssign, Div, Mul, MulAssign, Neg, Sub, SubAssign};
 
-/// A field suitable as a multivector coefficient type.
+/// A commutative ring — the arithmetic the algebra *core* needs.
 ///
-/// Implemented for `f32` and `f64`; also satisfiable by `Complex<f64>`, dual
-/// numbers, and exact fields (a finite field like GF(2), the rationals, …) —
-/// the coefficient field need not be ordered, only its
-/// [`Magnitude`](Scalar::Magnitude). The required `AddAssign` / `SubAssign` /
-/// `MulAssign` bounds let the linear-algebra loops stay written in their
-/// natural `+=` / `-=` form.
-pub trait Scalar:
+/// The geometric product, the wedge / inner / scalar products, grade
+/// projection, and the involutions are built entirely from `+`, `−`, `×`, and
+/// the `0`/`1` identities — **no division**. So they are defined for any
+/// `Ring`, which lets exact, division-free coefficient types (the integers
+/// `ℤ`, polynomials, …) be multivector coefficients. Division-only operations
+/// (the versor inverse, normalization) live on [`Scalar`], so they are simply
+/// unavailable — a compile error, not a silent wrong answer — over a ring
+/// that is not a field.
+pub trait Ring:
     Copy
     + fmt::Debug
-    + fmt::Display
     + PartialEq
     + Add<Output = Self>
     + Sub<Output = Self>
     + Mul<Output = Self>
-    + Div<Output = Self>
     + Neg<Output = Self>
     + AddAssign
     + SubAssign
     + MulAssign
 {
-    /// The ordered magnitude type returned by [`abs`](Scalar::abs), used for
-    /// tolerance and zero-threshold comparisons.
-    ///
-    /// It need only be an *ordered* [`Scalar`] (`Scalar + PartialOrd`), not a
-    /// [`Real`] one — so the coefficient field itself may be unordered
-    /// (`Complex<f64>`, whose magnitude is the real modulus) or exact
-    /// (integers, a finite field like GF(2), the rationals — each its own
-    /// magnitude). For an ordered real scalar it is simply `Self`. This is the
-    /// relaxation that lets fields beyond `f32`/`f64` be coefficients: the
-    /// product, wedge, grades, and involutions are pure ring arithmetic and
-    /// never touch ordering, so only the tolerance-based helpers care.
-    type Magnitude: Scalar + PartialOrd;
-
     /// The additive identity.
     const ZERO: Self;
     /// The multiplicative identity.
     const ONE: Self;
+}
+
+/// A field: a [`Ring`] with division, a real-valued magnitude, and an `f64`
+/// conversion for tolerances and literals.
+///
+/// Implemented for `f32`/`f64`, and satisfiable by `Complex<f64>`, dual
+/// numbers, and exact fields (a finite field like GF(2), the rationals). The
+/// field itself need not be ordered — only its
+/// [`Magnitude`](Scalar::Magnitude). `Scalar` is what the **division-based**
+/// operations (versor inverse, normalization) require.
+pub trait Scalar: Ring + Div<Output = Self> + fmt::Display {
+    /// The ordered magnitude type returned by [`abs`](Scalar::abs), used for
+    /// tolerance and zero-threshold comparisons.
+    ///
+    /// It need only be an *ordered* [`Scalar`] (`Scalar + PartialOrd`), not a
+    /// [`Real`] one — so the field itself may be unordered (`Complex<f64>`,
+    /// whose magnitude is the real modulus) or exact (a finite field, the
+    /// rationals — each its own magnitude). For an ordered real scalar it is
+    /// simply `Self`.
+    type Magnitude: Scalar + PartialOrd;
+
     /// Convert from an `f64`. Used for tolerances and scalar literals.
     /// May lose precision (e.g. for `f32`); that's expected.
     fn from_f64(x: f64) -> Self;
@@ -107,10 +116,13 @@ pub trait Real: Scalar<Magnitude = Self> + PartialOrd {
 // custom `Scalar`/`Real` type needs neither feature.
 macro_rules! impl_scalar_real {
     ($t:ty, $abs:path, $sqrt:path, $sin:path, $cos:path, $sinh:path, $cosh:path, $ln:path) => {
-        impl Scalar for $t {
-            type Magnitude = $t;
+        impl Ring for $t {
             const ZERO: Self = 0.0;
             const ONE: Self = 1.0;
+        }
+
+        impl Scalar for $t {
+            type Magnitude = $t;
             #[inline]
             fn from_f64(x: f64) -> Self {
                 x as $t
@@ -155,7 +167,7 @@ macro_rules! impl_scalar_real {
 // `std` and `libm` are enabled.
 #[cfg(feature = "std")]
 mod float_backend {
-    use super::{Real, Scalar};
+    use super::{Real, Ring, Scalar};
 
     impl_scalar_real!(
         f32,
@@ -184,7 +196,7 @@ mod float_backend {
 // the natural logarithm.
 #[cfg(all(not(feature = "std"), feature = "libm"))]
 mod float_backend {
-    use super::{Real, Scalar};
+    use super::{Real, Ring, Scalar};
 
     impl_scalar_real!(
         f32,
