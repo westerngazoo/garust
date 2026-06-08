@@ -83,7 +83,7 @@ pub use algebra::{Algebra, BladeStore};
 pub use autodiff::Dual;
 pub use calculus::{multivector_derivative, partials};
 pub use multivector::Multivector;
-pub use scalar::{Real, Scalar};
+pub use scalar::{Real, Ring, Scalar};
 
 /// Derive macro for [`Algebra`] — the opt-in proc-macro alternative to
 /// [`define_algebra!`], available under the `derive` feature.

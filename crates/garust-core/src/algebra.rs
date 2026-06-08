@@ -52,7 +52,7 @@
 use core::fmt::Debug;
 use core::ops::{Index, IndexMut};
 
-use crate::scalar::Scalar;
+use crate::scalar::Ring;
 
 /// Backing storage for a multivector's `2^N` blade coefficients.
 ///
@@ -127,9 +127,11 @@ pub trait Algebra: Copy + Debug {
     const DIM: usize = 1 << Self::N;
 
     /// The backing array for this signature's `2^N` coefficients, generic
-    /// over the scalar `T`. For every concrete signature this resolves to
-    /// a fixed-size `[T; 2^N]`.
-    type Blades<T: Scalar>: BladeStore<T>;
+    /// over the coefficient type `T`. For every concrete signature this
+    /// resolves to a fixed-size `[T; 2^N]`. Bounded by [`Ring`] (not the
+    /// stronger [`Scalar`](crate::Scalar)) so multivectors can hold exact,
+    /// division-free coefficients such as the integers.
+    type Blades<T: Ring>: BladeStore<T>;
 
     /// Precomputed geometric-product Cayley table: a flat, row-major
     /// `DIM × DIM` slice whose cell `[a * DIM + b]` is the
@@ -170,7 +172,7 @@ macro_rules! define_algebra {
             const P: usize = $p;
             const Q: usize = $q;
             const R: usize = $r;
-            type Blades<T: $crate::scalar::Scalar> = [T; 1 << ($p + $q + $r)];
+            type Blades<T: $crate::scalar::Ring> = [T; 1 << ($p + $q + $r)];
             const CAYLEY: &'static [$crate::signature::CayleyEntry] =
                 &$crate::signature::cayley_table::<
                     { (1usize << ($p + $q + $r)) * (1usize << ($p + $q + $r)) },

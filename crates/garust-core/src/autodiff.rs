@@ -36,7 +36,7 @@ use core::cmp::Ordering;
 use core::fmt;
 use core::ops::{Add, AddAssign, Div, Mul, MulAssign, Neg, Sub, SubAssign};
 
-use crate::scalar::{Real, Scalar};
+use crate::scalar::{Real, Ring, Scalar};
 
 /// A forward-mode AD dual number: `value + deriv·ε`, with `ε² = 0`.
 ///
@@ -151,8 +151,7 @@ impl<T: Real> PartialOrd for Dual<T> {
     }
 }
 
-impl<T: Real> Scalar for Dual<T> {
-    type Magnitude = Self;
+impl<T: Real> Ring for Dual<T> {
     const ZERO: Self = Self {
         value: T::ZERO,
         deriv: T::ZERO,
@@ -161,6 +160,10 @@ impl<T: Real> Scalar for Dual<T> {
         value: T::ONE,
         deriv: T::ZERO,
     };
+}
+
+impl<T: Real> Scalar for Dual<T> {
+    type Magnitude = Self;
     fn from_f64(x: f64) -> Self {
         Self {
             value: T::from_f64(x),

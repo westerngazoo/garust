@@ -32,10 +32,10 @@
 
 use crate::algebra::Algebra;
 use crate::multivector::Multivector;
-use crate::scalar::Scalar;
+use crate::scalar::Ring;
 use crate::signature::swap_sign;
 
-impl<A: Algebra, T: Scalar> Multivector<A, T> {
+impl<A: Algebra, T: Ring> Multivector<A, T> {
     /// The unit pseudoscalar `I = e1 ∧ e2 ∧ … ∧ eN` — the single
     /// top-grade blade, living at index `DIM - 1` (all bits set).
     ///

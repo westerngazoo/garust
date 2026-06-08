@@ -16,7 +16,7 @@
 
 use crate::algebra::{Algebra, BladeStore};
 use crate::multivector::Multivector;
-use crate::scalar::{max, Real, Scalar};
+use crate::scalar::{max, Real, Ring, Scalar};
 
 impl<A: Algebra, T: Scalar> Multivector<A, T> {
     /// Inverse `M⁻¹ = ~M / ⟨M ~M⟩_0`, defined for versors.
@@ -30,7 +30,7 @@ impl<A: Algebra, T: Scalar> Multivector<A, T> {
         let scalar = prod.scalar_part();
         // The tolerance lives in the real magnitude type, so this works even
         // when the coefficient field (e.g. Complex) has no order of its own.
-        let one = <T::Magnitude as Scalar>::ONE;
+        let one = <T::Magnitude as Ring>::ONE;
         let tol = <T::Magnitude as Scalar>::from_f64(1e-10) * max(scalar.abs(), one);
         for i in 1..A::DIM {
             if prod.coeffs[i].abs() > tol {
@@ -51,7 +51,12 @@ impl<A: Algebra, T: Scalar> Multivector<A, T> {
              or has zero norm; use try_versor_inverse to handle this",
         )
     }
+}
 
+// The sandwich is a pair of geometric products — pure ring arithmetic, so it
+// (and the batch form) is available over any `Ring` coefficient, not just a
+// field.
+impl<A: Algebra, T: Ring> Multivector<A, T> {
     /// Sandwich product `self · x · ~self`.
     ///
     /// The universal GA transformation:

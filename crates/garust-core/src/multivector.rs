@@ -4,7 +4,7 @@ use core::fmt;
 use core::ops::{Add, AddAssign, Mul, Neg, Sub, SubAssign};
 
 use crate::algebra::{Algebra, BladeStore};
-use crate::scalar::{Real, Scalar};
+use crate::scalar::{Real, Ring, Scalar};
 
 /// A multivector in the Clifford algebra `A`, with coefficients of type
 /// `T`.
@@ -13,7 +13,9 @@ use crate::scalar::{Real, Scalar};
 ///   (`Vga3Sig`, `Pga3Sig`, …, or one minted with
 ///   [`define_algebra!`](crate::define_algebra)). It pins `P`, `Q`, `R`
 ///   and hence the blade count `DIM = 2^(P+Q+R)`.
-/// - `T` = coefficient type (any [`Scalar`]; `f32`/`f64` provided).
+/// - `T` = coefficient type. The algebra core needs only [`Ring`]
+///   (`+`, `−`, `×`), so exact division-free coefficients (the integers, …)
+///   work; `f32`/`f64`/`Complex`/`Dual` additionally implement [`Scalar`].
 ///
 /// The coefficient storage is `A::Blades<T>` — a fixed `[T; 2^N]` array
 /// for every concrete signature. Tying the length to `A` rather than a
@@ -28,7 +30,7 @@ use crate::scalar::{Real, Scalar};
 /// `&[Multivector<A, T>]` be reinterpreted as a flat scalar (or byte)
 /// buffer with no copy, e.g. for upload to the GPU.
 #[repr(transparent)]
-pub struct Multivector<A: Algebra, T: Scalar> {
+pub struct Multivector<A: Algebra, T: Ring> {
     /// Coefficient of each basis blade, indexed by the bitmask convention
     /// in [`crate::signature`]. `coeffs[0]` is always the scalar part.
     pub coeffs: A::Blades<T>,
@@ -37,23 +39,23 @@ pub struct Multivector<A: Algebra, T: Scalar> {
 // `derive` can't prove `A::Blades<T>: Clone/Copy/…` through the projected
 // associated type, so the standard marker traits are written by hand. The
 // bounds are real: `BladeStore<T>: Copy` makes the field `Copy`, and
-// `Scalar: PartialEq + Debug` covers the slice-based comparisons below.
+// `Ring: PartialEq + Debug` covers the slice-based comparisons below.
 
-impl<A: Algebra, T: Scalar> Clone for Multivector<A, T> {
+impl<A: Algebra, T: Ring> Clone for Multivector<A, T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<A: Algebra, T: Scalar> Copy for Multivector<A, T> {}
+impl<A: Algebra, T: Ring> Copy for Multivector<A, T> {}
 
-impl<A: Algebra, T: Scalar> PartialEq for Multivector<A, T> {
+impl<A: Algebra, T: Ring> PartialEq for Multivector<A, T> {
     fn eq(&self, other: &Self) -> bool {
         self.coeffs.as_slice() == other.coeffs.as_slice()
     }
 }
 
-impl<A: Algebra, T: Scalar> fmt::Debug for Multivector<A, T> {
+impl<A: Algebra, T: Ring> fmt::Debug for Multivector<A, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Multivector")
             .field("coeffs", &self.coeffs.as_slice())
@@ -61,7 +63,7 @@ impl<A: Algebra, T: Scalar> fmt::Debug for Multivector<A, T> {
     }
 }
 
-impl<A: Algebra, T: Scalar> Multivector<A, T> {
+impl<A: Algebra, T: Ring> Multivector<A, T> {
     /// The zero multivector.
     pub fn zero() -> Self {
         Self {
@@ -100,7 +102,11 @@ impl<A: Algebra, T: Scalar> Multivector<A, T> {
     pub fn scalar_part(&self) -> T {
         self.coeffs[0]
     }
+}
 
+/// Field-only conveniences — they need a real-valued `abs` and ordering,
+/// which a bare [`Ring`] coefficient (e.g. the integers) does not provide.
+impl<A: Algebra, T: Scalar> Multivector<A, T> {
     /// Returns a copy of `self` with every coefficient whose magnitude
     /// is below `tol` set to zero.
     ///
@@ -123,7 +129,7 @@ impl<A: Algebra, T: Scalar> Multivector<A, T> {
     }
 }
 
-impl<A: Algebra, T: Scalar> Default for Multivector<A, T> {
+impl<A: Algebra, T: Ring> Default for Multivector<A, T> {
     fn default() -> Self {
         Self::zero()
     }
@@ -136,7 +142,7 @@ impl<A: Algebra, T: Scalar> Default for Multivector<A, T> {
 // in `R^DIM`. None of the *geometric* part of geometric algebra shows
 // up yet; that's all hiding in the product, which is coming next.
 
-impl<A: Algebra, T: Scalar> Add for Multivector<A, T> {
+impl<A: Algebra, T: Ring> Add for Multivector<A, T> {
     type Output = Self;
     fn add(mut self, rhs: Self) -> Self {
         for i in 0..A::DIM {
@@ -146,7 +152,7 @@ impl<A: Algebra, T: Scalar> Add for Multivector<A, T> {
     }
 }
 
-impl<A: Algebra, T: Scalar> AddAssign for Multivector<A, T> {
+impl<A: Algebra, T: Ring> AddAssign for Multivector<A, T> {
     fn add_assign(&mut self, rhs: Self) {
         for i in 0..A::DIM {
             self.coeffs[i] += rhs.coeffs[i];
@@ -154,7 +160,7 @@ impl<A: Algebra, T: Scalar> AddAssign for Multivector<A, T> {
     }
 }
 
-impl<A: Algebra, T: Scalar> Sub for Multivector<A, T> {
+impl<A: Algebra, T: Ring> Sub for Multivector<A, T> {
     type Output = Self;
     fn sub(mut self, rhs: Self) -> Self {
         for i in 0..A::DIM {
@@ -164,7 +170,7 @@ impl<A: Algebra, T: Scalar> Sub for Multivector<A, T> {
     }
 }
 
-impl<A: Algebra, T: Scalar> SubAssign for Multivector<A, T> {
+impl<A: Algebra, T: Ring> SubAssign for Multivector<A, T> {
     fn sub_assign(&mut self, rhs: Self) {
         for i in 0..A::DIM {
             self.coeffs[i] -= rhs.coeffs[i];
@@ -172,7 +178,7 @@ impl<A: Algebra, T: Scalar> SubAssign for Multivector<A, T> {
     }
 }
 
-impl<A: Algebra, T: Scalar> Neg for Multivector<A, T> {
+impl<A: Algebra, T: Ring> Neg for Multivector<A, T> {
     type Output = Self;
     fn neg(mut self) -> Self {
         for i in 0..A::DIM {
@@ -199,7 +205,7 @@ impl<A: Algebra, T: Scalar> Neg for Multivector<A, T> {
 // lookup, not a popcount/parity computation. The outer `ca == 0` skip turns
 // sparse operands (e.g. a graded blade) into far less work.
 
-impl<A: Algebra, T: Scalar> Mul for Multivector<A, T> {
+impl<A: Algebra, T: Ring> Mul for Multivector<A, T> {
     type Output = Self;
     fn mul(self, rhs: Self) -> Self {
         let mut out = Self::zero();
@@ -232,7 +238,7 @@ impl<A: Algebra, T: Scalar> Mul for Multivector<A, T> {
 // written out per concrete scalar because coherence forbids a blanket
 // `impl<T> Mul<Multivector<T, …>> for T`.
 
-impl<A: Algebra, T: Scalar> Mul<T> for Multivector<A, T> {
+impl<A: Algebra, T: Ring> Mul<T> for Multivector<A, T> {
     type Output = Self;
     fn mul(mut self, rhs: T) -> Self {
         for i in 0..A::DIM {

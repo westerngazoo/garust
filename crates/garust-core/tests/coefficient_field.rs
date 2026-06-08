@@ -17,7 +17,7 @@
 use core::fmt;
 use core::ops::{Add, AddAssign, Div, Mul, MulAssign, Neg, Sub, SubAssign};
 
-use garust_core::{Multivector, Scalar, Vga2Sig};
+use garust_core::{Multivector, Ring, Scalar, Vga2Sig};
 
 // --- A minimal complex field --------------------------------------------
 
@@ -88,10 +88,12 @@ impl MulAssign for Complex {
         *self = *self * o;
     }
 }
-impl Scalar for Complex {
-    type Magnitude = f64;
+impl Ring for Complex {
     const ZERO: Self = Self::new(0.0, 0.0);
     const ONE: Self = Self::new(1.0, 0.0);
+}
+impl Scalar for Complex {
+    type Magnitude = f64;
     fn from_f64(x: f64) -> Self {
         Self::new(x, 0.0)
     }
@@ -180,10 +182,12 @@ impl MulAssign for Dual {
         *self = *self * o;
     }
 }
-impl Scalar for Dual {
-    type Magnitude = f64;
+impl Ring for Dual {
     const ZERO: Self = Self::new(0.0, 0.0);
     const ONE: Self = Self::new(1.0, 0.0);
+}
+impl Scalar for Dual {
+    type Magnitude = f64;
     fn from_f64(x: f64) -> Self {
         Self::new(x, 0.0)
     }
