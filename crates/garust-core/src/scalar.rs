@@ -107,6 +107,10 @@ pub trait Real: Scalar<Magnitude = Self> + PartialOrd {
     /// Natural logarithm. Used to turn a scaling *factor* into the
     /// log-scale that drives a conformal dilator.
     fn ln(self) -> Self;
+    /// Four-quadrant arctangent of `self / x` (radians, in `(−τ/2, τ/2]`).
+    /// Used by the versor logarithm to recover a rotation angle from its
+    /// sine and cosine.
+    fn atan2(self, x: Self) -> Self;
 }
 
 // `abs` and the transcendentals are the only operations that need a math
@@ -115,7 +119,7 @@ pub trait Real: Scalar<Magnitude = Self> + PartialOrd {
 // backend (the standard library or `libm`), each gated by feature below. A
 // custom `Scalar`/`Real` type needs neither feature.
 macro_rules! impl_scalar_real {
-    ($t:ty, $abs:path, $sqrt:path, $sin:path, $cos:path, $sinh:path, $cosh:path, $ln:path) => {
+    ($t:ty, $abs:path, $sqrt:path, $sin:path, $cos:path, $sinh:path, $cosh:path, $ln:path, $atan2:path) => {
         impl Ring for $t {
             const ZERO: Self = 0.0;
             const ONE: Self = 1.0;
@@ -158,6 +162,10 @@ macro_rules! impl_scalar_real {
             fn ln(self) -> Self {
                 $ln(self)
             }
+            #[inline]
+            fn atan2(self, x: Self) -> Self {
+                $atan2(self, x)
+            }
         }
     };
 }
@@ -177,7 +185,8 @@ mod float_backend {
         f32::cos,
         f32::sinh,
         f32::cosh,
-        f32::ln
+        f32::ln,
+        f32::atan2
     );
     impl_scalar_real!(
         f64,
@@ -187,7 +196,8 @@ mod float_backend {
         f64::cos,
         f64::sinh,
         f64::cosh,
-        f64::ln
+        f64::ln,
+        f64::atan2
     );
 }
 
@@ -206,7 +216,8 @@ mod float_backend {
         libm::cosf,
         libm::sinhf,
         libm::coshf,
-        libm::logf
+        libm::logf,
+        libm::atan2f
     );
     impl_scalar_real!(
         f64,
@@ -216,7 +227,8 @@ mod float_backend {
         libm::cos,
         libm::sinh,
         libm::cosh,
-        libm::log
+        libm::log,
+        libm::atan2
     );
 }
 
