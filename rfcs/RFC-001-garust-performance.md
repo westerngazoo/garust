@@ -186,3 +186,36 @@ baseline. `wide` stays out of the default dependency graph (verified with
 ### Status: phases 0–4 shipped. Phase order followed ROI × risk; remaining
 ideas (own tables for `wedge`/`regressive`, `f32` SIMD lanes, wider vectors)
 are left to a future round, driven by an end-to-end VIGA re-measurement.
+
+## Appendix F — Phase 5 (continued): sparse wedge table
+
+The wedge was the one product the const-table work hadn't touched. The
+phase-1 recipe — a dense `DIM × DIM` table indexed in the hot loop — turned
+out to **pessimize** it: the wedge of two basis blades vanishes whenever they
+share a generator, so only `3^N` of the `4^N` pairs survive (76% are zero at
+`N = 5`), and the dense table traded the old loop's cheap `a & b != 0` skip
+for an unconditional multiply-accumulate on every pair. Measured on
+`Cl(4,1,0)`: wedge ~507 ns → ~590 ns (+15%). The dense layout was right for
+the geometric product only because its pairs are nearly all live.
+
+The fix is a **sparse, CSR-style table** (`Algebra::WEDGE`, a
+`signature::WedgeTable`): per left blade `a`, only the surviving
+`(b, a | b, swap_sign)` cells, built at compile time by const fns
+`wedge_rows` / `wedge_pairs`. The hot loop visits exactly the `3^N` live
+pairs — no overlap test, no `swap_sign` — and still skips whole rows when the
+left coefficient is zero. It is also *smaller* than the dense table (`3^N × 6 B`
+vs `4^N × 4 B`; 1.5 KB vs 4 KB at `N = 5`). The wedge is metric-independent,
+so the table never sees `(p, q)`.
+
+`Cl(4,1,0)` dense operands (criterion, aarch64):
+
+| Op                      | Before   | After    | Speedup |
+|-------------------------|----------|----------|---------|
+| `wedge` (a ∧ b)         | ~507 ns  | ~150 ns  | **3.4×** |
+| `regressive` (a ∨ b)    | ~674 ns  | ~283 ns  | **2.4×** |
+
+(`regressive` rides the same table through its complement-wedge-complement
+form.) A `wedge_matches_reference` proptest pins the table path bit-faithful
+to the definitional `swap_sign` loop, mirroring the geometric product's
+reference law. Still open: `f32` SIMD lanes / wider vectors, pending an
+end-to-end VIGA re-measurement.

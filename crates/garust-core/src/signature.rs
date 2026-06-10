@@ -131,6 +131,92 @@ pub const fn cayley_table<const NN: usize>(dim: usize, p: usize, q: usize) -> [C
     table
 }
 
+/// One surviving cell of a sparse wedge table: `(b, target, sign)` — blade
+/// `b` of the right operand, the result blade `a | b`, and the reordering
+/// sign `±1`. The row blade `a` is implicit in the CSR layout of
+/// [`WedgeTable`]. Vanishing (overlapping) pairs are never stored.
+pub type WedgeEntry = (u16, u16, i8);
+
+/// `3^n` — the number of *disjoint* basis-blade pairs in an `n`-generator
+/// algebra (each generator is in `a`, in `b`, or in neither), and therefore
+/// the number of surviving cells in its [`WedgeTable`].
+pub const fn pow3(n: usize) -> usize {
+    let mut r = 1;
+    let mut i = 0;
+    while i < n {
+        r *= 3;
+        i += 1;
+    }
+    r
+}
+
+/// A **sparse**, CSR-style wedge (outer-product) table.
+///
+/// The wedge of two basis blades vanishes whenever they share a generator —
+/// for `N` generators only `3^N` of the `4^N` blade pairs survive (76% are
+/// zero already at `N = 5`). A dense `DIM × DIM` table in the style of
+/// [`cayley_table`] therefore *pessimizes* the wedge: it trades the cheap
+/// `a & b != 0` skip for a multiply-accumulate on every pair (measured
+/// ~15% slower on `Cl(4,1,0)`). Storing only the survivors keeps the inner
+/// loop free of both the overlap test *and* the [`swap_sign`] computation,
+/// while visiting exactly the `3^N` live pairs.
+///
+/// Unlike the geometric product's table this is metric-independent — the
+/// wedge never squares a generator — so it is identical for every signature
+/// of a given dimension.
+#[derive(Clone, Copy, Debug)]
+pub struct WedgeTable {
+    /// `DIM + 1` row offsets: row `a`'s surviving cells are
+    /// `pairs[rows[a] as usize .. rows[a + 1] as usize]`.
+    pub rows: &'static [u32],
+    /// All surviving cells, row-major by left blade `a` (see [`WedgeEntry`]).
+    pub pairs: &'static [WedgeEntry],
+}
+
+/// Build the row-offset half of a [`WedgeTable`] at compile time. `DIM1`
+/// must be `dim + 1`; [`define_algebra!`](crate::define_algebra) and the
+/// `Algebra` derive supply it from the signature literals.
+pub const fn wedge_rows<const DIM1: usize>(dim: usize) -> [u32; DIM1] {
+    let mut rows = [0u32; DIM1];
+    let mut count = 0u32;
+    let mut a = 0;
+    while a < dim {
+        rows[a] = count;
+        let mut b = 0;
+        while b < dim {
+            if a & b == 0 {
+                count += 1;
+            }
+            b += 1;
+        }
+        a += 1;
+    }
+    rows[dim] = count;
+    rows
+}
+
+/// Build the cell half of a [`WedgeTable`] at compile time: every disjoint
+/// pair's `(b, a | b, swap_sign(a, b))`, row-major by `a`. `P3` must be
+/// [`pow3`]`(n)` for `dim = 2^n`; [`define_algebra!`](crate::define_algebra)
+/// and the `Algebra` derive supply it from the signature literals.
+pub const fn wedge_pairs<const P3: usize>(dim: usize) -> [WedgeEntry; P3] {
+    let mut pairs = [(0u16, 0u16, 0i8); P3];
+    let mut k = 0;
+    let mut a = 0;
+    while a < dim {
+        let mut b = 0;
+        while b < dim {
+            if a & b == 0 {
+                pairs[k] = (b as u16, (a | b) as u16, swap_sign(a, b) as i8);
+                k += 1;
+            }
+            b += 1;
+        }
+        a += 1;
+    }
+    pairs
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

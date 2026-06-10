@@ -83,6 +83,14 @@ fn expand(ast: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
                 &#krate::signature::cayley_table::<
                     { (1usize << (#p + #q + #r)) * (1usize << (#p + #q + #r)) },
                 >(1usize << (#p + #q + #r), #p, #q);
+            const WEDGE: #krate::signature::WedgeTable = #krate::signature::WedgeTable {
+                rows: &#krate::signature::wedge_rows::<
+                    { (1usize << (#p + #q + #r)) + 1 },
+                >(1usize << (#p + #q + #r)),
+                pairs: &#krate::signature::wedge_pairs::<
+                    { #krate::signature::pow3(#p + #q + #r) },
+                >(1usize << (#p + #q + #r)),
+            };
         }
     })
 }

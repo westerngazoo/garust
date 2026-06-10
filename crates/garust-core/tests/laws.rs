@@ -57,6 +57,30 @@ fn reference_product<A: Algebra>(
     out
 }
 
+/// The wedge computed straight from the overlap test and `swap_sign` —
+/// the definitional reference the const-wedge-table product must
+/// reproduce exactly (same blade-pair order ⇒ bit-identical accumulation).
+fn reference_wedge<A: Algebra>(
+    a: &Multivector<A, f64>,
+    b: &Multivector<A, f64>,
+) -> Multivector<A, f64> {
+    let mut out = Multivector::<A, f64>::zero();
+    for i in 0..A::DIM {
+        for j in 0..A::DIM {
+            if i & j != 0 {
+                continue;
+            }
+            let term = a.coeffs[i] * b.coeffs[j];
+            if garust_core::signature::swap_sign(i, j) > 0 {
+                out.coeffs[i | j] += term;
+            } else {
+                out.coeffs[i | j] -= term;
+            }
+        }
+    }
+    out
+}
+
 /// A dense random `Vga3` (`Cl(3,0,0)`) — all 8 coefficients drawn from
 /// `[-3, 3]`.
 fn any_vga3() -> impl Strategy<Value = Vga3> {
@@ -115,6 +139,13 @@ macro_rules! algebra_laws {
                 #[test]
                 fn wedge_is_associative(a in $mv, b in $mv, c in $mv) {
                     prop_assert!(close(&a.wedge(&b).wedge(&c), &a.wedge(&b.wedge(&c))));
+                }
+
+                // The const-wedge-table product matches the swap_sign
+                // reference exactly — the fast path is bit-faithful.
+                #[test]
+                fn wedge_matches_reference(a in $mv, b in $mv) {
+                    prop_assert_eq!(a.wedge(&b), reference_wedge(&a, &b));
                 }
 
                 // ⟨a b⟩_0 = ⟨b a⟩_0 — the scalar product is symmetric.
