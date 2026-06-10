@@ -202,6 +202,14 @@ impl<T: Real> Real for Dual<T> {
         // d/dx ln x = 1/x
         Self::new(self.value.ln(), self.deriv / self.value)
     }
+    fn atan2(self, x: Self) -> Self {
+        // d atan2(y, x) = (y′x − x′y) / (x² + y²)
+        let denom = x.value * x.value + self.value * self.value;
+        Self::new(
+            self.value.atan2(x.value),
+            (self.deriv * x.value - x.deriv * self.value) / denom,
+        )
+    }
 }
 
 #[cfg(test)]
@@ -214,6 +222,18 @@ mod tests {
 
     fn close(a: f64, b: f64) {
         assert!((a - b).abs() < 1e-12, "{a} vs {b}");
+    }
+
+    #[test]
+    fn atan2_chain_rule() {
+        // f(y) = atan2(y, x₀): f′ = x₀ / (x₀² + y²).
+        let (y0, x0) = (1.0_f64, 2.0_f64);
+        let f = Dual::variable(y0).atan2(Dual::constant(x0));
+        close(f.value, y0.atan2(x0));
+        close(f.deriv, x0 / (x0 * x0 + y0 * y0));
+        // g(x) = atan2(y₀, x): g′ = −y₀ / (x² + y₀²).
+        let g = Dual::constant(y0).atan2(Dual::variable(x0));
+        close(g.deriv, -y0 / (x0 * x0 + y0 * y0));
     }
 
     #[test]

@@ -168,6 +168,38 @@ impl<T: Real> Motor<T> {
         let versor = (unit * (radians * T::from_f64(-0.5))).exp();
         Self { versor }
     }
+
+    /// The motor's logarithm: the **screw bivector** `B` (rotation plane +
+    /// pitch translation, the motor's Lie-algebra coordinates) with
+    /// `exp(B) = ±M`. Inverse of building a motor from
+    /// [`rotor`](Motor::rotor) / [`translator`](Motor::translator) /
+    /// [`rotation_about`](Motor::rotation_about) products; see
+    /// [`Multivector::log`](garust_core::Multivector::log) for the
+    /// principal-branch contract.
+    pub fn log(&self) -> Pga<T> {
+        self.versor.log()
+    }
+
+    /// Smooth screw interpolation between two motors — the motor "slerp".
+    ///
+    /// `t = 0` gives `self`, `t = 1` gives `other` (as motions; the versor
+    /// may differ by the irrelevant overall sign), and in between the
+    /// motion follows the constant-speed screw connecting them:
+    ///
+    /// ```text
+    /// M(t) = exp(t · log(other ∘ self⁻¹)) ∘ self
+    /// ```
+    ///
+    /// Because [`log`](Motor::log) folds the versor sign, the path takes
+    /// the short way around — the motor analogue of quaternion slerp's
+    /// antipodal flip. `t` outside `[0, 1]` extrapolates along the same
+    /// screw.
+    pub fn slerp(&self, other: &Self, t: T) -> Self {
+        let delta = (other.versor * self.versor.versor_inverse()).log();
+        Self {
+            versor: (delta * t).exp() * self.versor,
+        }
+    }
 }
 
 /// Composition of motions. `a * b` applies `b` first, then `a`.
@@ -311,6 +343,71 @@ mod tests {
         m.apply_each(&mut batch);
         for (src, got) in pts.iter().zip(batch.iter()) {
             approx_eq(&got.coeffs, &m.apply(src).coeffs, 1e-12);
+        }
+    }
+
+    #[test]
+    fn log_recovers_the_screw_generator() {
+        // A screw: rotate about x while translating along it. log must
+        // return exactly the bivector exp was fed (principal range).
+        let m = Motor::rotor(0.8, Pga3::basis(0b0110)) * Motor::translator(1.5, 0.0, 0.0);
+        let b = m.log();
+        approx_eq(
+            &Motor::from_versor(b.exp()).versor().coeffs,
+            &m.versor().coeffs,
+            1e-12,
+        );
+    }
+
+    #[test]
+    fn slerp_hits_both_endpoints() {
+        let a = Motor::rotor(0.7, Pga3::basis(0b0011)) * Motor::translator(0.0, 2.0, -1.0);
+        let b = Motor::rotor(-0.4, Pga3::basis(0b0110)) * Motor::translator(3.0, 0.0, 0.5);
+        let p = Pga3::point(1.0, -2.0, 0.25);
+        // Compare as *motions* (apply to a point): the versor itself may
+        // come back with the opposite, equivalent sign.
+        approx_eq(
+            &a.slerp(&b, 0.0).apply(&p).coeffs,
+            &a.apply(&p).coeffs,
+            1e-10,
+        );
+        approx_eq(
+            &a.slerp(&b, 1.0).apply(&p).coeffs,
+            &b.apply(&p).coeffs,
+            1e-10,
+        );
+    }
+
+    #[test]
+    fn slerp_midpoint_of_translations_is_the_half_translation() {
+        let a = Motor::translator(0.0, 0.0, 0.0);
+        let b = Motor::translator(4.0, -2.0, 6.0);
+        let mid = a.slerp(&b, 0.5);
+        let moved = mid.apply(&Pga3::point(0.0, 0.0, 0.0)).cleaned(1e-10);
+        approx_eq(&moved.coeffs, &Pga3::point(2.0, -1.0, 3.0).coeffs, 1e-12);
+    }
+
+    #[test]
+    fn slerp_midpoint_of_rotations_is_the_half_angle() {
+        let a = Motor::identity();
+        let b = Motor::rotor(TAU / 4.0, Pga3::basis(0b0110));
+        let mid = a.slerp(&b, 0.5);
+        let expected = Motor::rotor(TAU / 8.0, Pga3::basis(0b0110));
+        let p = Pga3::point(0.0, 1.0, 2.0);
+        approx_eq(&mid.apply(&p).coeffs, &expected.apply(&p).coeffs, 1e-12);
+    }
+
+    #[test]
+    fn slerp_of_screws_follows_a_constant_screw() {
+        // Interpolating identity → screw must pass through the t-scaled
+        // screw at every t (one-parameter subgroup property).
+        let screw = Motor::rotor(1.0, Pga3::basis(0b0110)) * Motor::translator(2.0, 0.0, 0.0);
+        let gen = screw.log();
+        let p = Pga3::point(0.5, 1.0, -1.0);
+        for &t in &[0.25, 0.5, 0.75] {
+            let direct = Motor::from_versor((gen * t).exp());
+            let lerped = Motor::identity().slerp(&screw, t);
+            approx_eq(&lerped.apply(&p).coeffs, &direct.apply(&p).coeffs, 1e-10);
         }
     }
 }

@@ -178,6 +178,37 @@ impl<T: Real> Conformal<T> {
         let versor = (e * (factor.ln() * T::from_f64(0.5))).exp();
         Self { versor }
     }
+
+    /// The transformation's logarithm: the **conformal bivector** `B`
+    /// (rotation + translation + log-scale generators, the Lie-algebra
+    /// coordinates) with `exp(B) = ±self`. Inverse of building the
+    /// transformation from [`rotor`](Conformal::rotor) /
+    /// [`translator`](Conformal::translator) /
+    /// [`dilator`](Conformal::dilator) products; see
+    /// [`Multivector::log`](garust_core::Multivector::log) for the
+    /// principal-branch contract.
+    pub fn log(&self) -> Cga<T> {
+        self.versor.log()
+    }
+
+    /// Smooth interpolation between two conformal transformations along
+    /// the constant-speed one-parameter subgroup connecting them:
+    ///
+    /// ```text
+    /// C(t) = exp(t · log(other ∘ self⁻¹)) ∘ self
+    /// ```
+    ///
+    /// `t = 0` gives `self`, `t = 1` gives `other` (as transformations —
+    /// the versor may differ by the irrelevant overall sign); a rotation
+    /// blends through intermediate angles, a dilation through
+    /// intermediate scales (geometric mean at `t = ½`), and mixtures
+    /// spiral. `t` outside `[0, 1]` extrapolates.
+    pub fn slerp(&self, other: &Self, t: T) -> Self {
+        let delta = (other.versor * self.versor.versor_inverse()).log();
+        Self {
+            versor: (delta * t).exp() * self.versor,
+        }
+    }
 }
 
 /// Composition of transformations. `a * b` applies `b` first, then `a`.
@@ -283,5 +314,27 @@ mod tests {
         let s2 = d.apply(&s);
         assert!(Cga3::cga_point(2.0, 0.0, 0.0).scalar_product(&s2).abs() < 1e-10);
         assert!(Cga3::cga_point(1.0, 0.0, 0.0).scalar_product(&s2).abs() > 1e-6);
+    }
+
+    #[test]
+    fn log_recovers_a_mixed_transformation() {
+        // Rotation + dilation: exp(log C) must reproduce C's action.
+        let c = Conformal::rotor(0.9, Cga3::basis(0b0011)) * Conformal::dilator(1.7);
+        let back = Conformal::from_versor(c.log().exp());
+        let p = Cga3::cga_point(1.0, -0.5, 2.0);
+        approx(back.apply(&p).to_euclidean(), c.apply(&p).to_euclidean());
+    }
+
+    #[test]
+    fn slerp_midpoint_of_dilations_is_the_geometric_mean() {
+        // Half-way between ×1 and ×4 along the dilation subgroup is ×2
+        // (scales compose multiplicatively, so the path is exponential).
+        let a = Conformal::identity();
+        let b = Conformal::dilator(4.0);
+        let mid = a.slerp(&b, 0.5);
+        approx(
+            mid.apply(&Cga3::cga_point(1.0, 0.0, 0.0)).to_euclidean(),
+            (2.0, 0.0, 0.0),
+        );
     }
 }
