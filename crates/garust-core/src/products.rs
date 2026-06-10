@@ -28,7 +28,7 @@
 use crate::algebra::Algebra;
 use crate::multivector::Multivector;
 use crate::scalar::Ring;
-use crate::signature::{blade_product, grade_of, swap_sign};
+use crate::signature::{blade_product, grade_of};
 
 impl<A: Algebra, T: Ring> Multivector<A, T> {
     /// Grade-`k` projection `⟨M⟩_k`. Zeros every coefficient whose
@@ -47,26 +47,26 @@ impl<A: Algebra, T: Ring> Multivector<A, T> {
     ///
     /// Signature-independent: the wedge of two basis blades is the
     /// union of their generators times the reordering sign, and is
-    /// zero whenever they overlap. Result blade index `a | b` (bitwise
-    /// OR) is well-defined precisely because the disjointness check
-    /// makes `a | b == a + b == a ^ b` for the surviving pairs.
+    /// zero whenever they overlap. The hot loop walks the signature's
+    /// precomputed *sparse* `A::WEDGE` table (built once at compile
+    /// time), visiting only the `3^N` disjoint blade pairs — no overlap
+    /// test, no reordering-parity computation, and whole rows are still
+    /// skipped when the left coefficient is zero.
     pub fn wedge(&self, rhs: &Self) -> Self {
         let mut out = Self::zero();
+        let table = A::WEDGE;
         for a in 0..A::DIM {
             let ca = self.coeffs[a];
             if ca == T::ZERO {
                 continue;
             }
-            for b in 0..A::DIM {
-                if a & b != 0 {
-                    continue;
-                }
-                let sign = swap_sign(a, b);
-                let term = ca * rhs.coeffs[b];
+            let row = table.rows[a] as usize..table.rows[a + 1] as usize;
+            for &(b, idx, sign) in &table.pairs[row] {
+                let term = ca * rhs.coeffs[b as usize];
                 if sign > 0 {
-                    out.coeffs[a | b] += term;
+                    out.coeffs[idx as usize] += term;
                 } else {
-                    out.coeffs[a | b] -= term;
+                    out.coeffs[idx as usize] -= term;
                 }
             }
         }
