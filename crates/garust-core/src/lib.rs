@@ -83,7 +83,7 @@ mod bytemuck_impls;
 pub use algebra::{Algebra, BladeStore};
 pub use autodiff::Dual;
 pub use calculus::{multivector_derivative, partials};
-pub use dynamics::Phase;
+pub use dynamics::{ExtendedPhase, Phase};
 pub use multivector::Multivector;
 pub use scalar::{Real, Ring, Scalar};
 
