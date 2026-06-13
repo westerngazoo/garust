@@ -18,9 +18,9 @@ default = ["std"]
 # Standard-library float math, forwarded to both members. On by default; the
 # crates are otherwise `#![no_std]`. For no_std, use `default-features =
 # false` and enable `libm`.
-std = ["garust-core/std", "garust-geo/std"]
+std = ["garust-core/std", "garust-geo/std", "garust-physics?/std"]
 # `no_std` float math via `libm`, forwarded to both members.
-libm = ["garust-core/libm", "garust-geo/libm"]
+libm = ["garust-core/libm", "garust-geo/libm", "garust-physics?/libm"]
 # Opt-in `#[derive(Algebra)]`, forwarded to garust-core. Off by default so
 # the umbrella crate stays dependency-free unless you ask for the derive.
 derive = ["garust-core/derive"]
@@ -32,15 +32,25 @@ serde = ["garust-core/serde", "garust-geo/serde"]
 bytemuck = ["garust-core/bytemuck", "garust-geo/bytemuck"]
 # Opt-in SIMD batch transforms, forwarded to garust-geo. Off by default.
 simd = ["garust-geo/simd"]
+# Opt-in rigid-body physics (the `garust-physics` crate, re-exported as
+# `garust::physics`). Off by default so the umbrella stays dependency-free.
+physics = ["dep:garust-physics"]
 
 [dependencies]
 # Inherit `default-features = false` from `[workspace.dependencies]`, so the
 # umbrella's `std`/`libm` features choose the members' math backend.
 garust-core = { workspace = true }
 garust-geo = { workspace = true }
+# Optional rigid-body layer, behind the `physics` feature.
+garust-physics = { workspace = true, optional = true }
 
 [workspace]
-members = ["crates/garust-core", "crates/garust-geo", "crates/garust-derive"]
+members = [
+    "crates/garust-core",
+    "crates/garust-geo",
+    "crates/garust-derive",
+    "crates/garust-physics",
+]
 
 [workspace.package]
 version = "0.1.0"
@@ -56,6 +66,7 @@ repository = "https://github.com/westerngazoo/garust"
 garust-core = { version = "0.1.0", path = "crates/garust-core", default-features = false }
 garust-geo = { version = "0.1.0", path = "crates/garust-geo", default-features = false }
 garust-derive = { version = "0.1.0", path = "crates/garust-derive" }
+garust-physics = { version = "0.1.0", path = "crates/garust-physics", default-features = false }
 
 # Proc-macro toolchain — pulled in only when the optional `derive` feature
 # is enabled, so the default build stays dependency-free.
