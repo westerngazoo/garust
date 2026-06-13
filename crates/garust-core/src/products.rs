@@ -27,7 +27,7 @@
 
 use crate::algebra::Algebra;
 use crate::multivector::Multivector;
-use crate::scalar::Ring;
+use crate::scalar::{Ring, Scalar};
 use crate::signature::{blade_product, grade_of};
 
 impl<A: Algebra, T: Ring> Multivector<A, T> {
@@ -141,6 +141,20 @@ impl<A: Algebra, T: Ring> Multivector<A, T> {
     }
 }
 
+impl<A: Algebra, T: Scalar> Multivector<A, T> {
+    /// The commutator product `A × B = ½(AB − BA)`.
+    ///
+    /// The Lie bracket of the algebra. On **bivectors** it is closed
+    /// (bivector × bivector is again a bivector) and is exactly the bracket
+    /// of the Lie algebra of the rotation / motion group — so it is the
+    /// `P × B` "gyroscopic" term in the geometric form of the rigid-body
+    /// equations `Ṗ = W + P × B` (see RFC-010). Antisymmetric:
+    /// `a.commutator(&b) == -b.commutator(&a)`.
+    pub fn commutator(&self, rhs: &Self) -> Self {
+        (*self * *rhs - *rhs * *self) * T::from_f64(0.5)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{Vga2, Vga3};
@@ -241,5 +255,26 @@ mod tests {
         assert_eq!(e1.scalar_product(&e2), 0.0);
         // ⟨e12 * e12⟩_0 = -1
         assert_eq!(e12.scalar_product(&e12), -1.0);
+    }
+
+    // --- Commutator -----------------------------------------------------
+
+    #[test]
+    fn commutator_of_orthogonal_vectors_is_their_bivector() {
+        // ½(e1 e2 − e2 e1) = ½(e12 − (−e12)) = e12
+        let e1 = Vga3::basis(1);
+        let e2 = Vga3::basis(2);
+        assert_eq!(e1.commutator(&e2), Vga3::basis(3));
+    }
+
+    #[test]
+    fn commutator_is_antisymmetric() {
+        let a = Vga3 {
+            coeffs: [0.0, 1.0, -2.0, 0.0, 3.0, 0.0, 0.0, 0.0],
+        };
+        let b = Vga3 {
+            coeffs: [0.0, 0.5, 0.0, 4.0, 0.0, -1.0, 0.0, 0.0],
+        };
+        assert_eq!(a.commutator(&b), -b.commutator(&a));
     }
 }

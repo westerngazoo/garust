@@ -92,8 +92,11 @@
 //!   duality, and the *raw* PGA/CGA constructors.
 //! - [`garust_geo`] — the *typed* geometry layer built on the kernel:
 //!   [`Motor`], [`Conformal`], and the typed [`pga`] and [`cga`] objects.
+//! - `garust-physics` — rigid-body dynamics on the PGA kernel (an inertia
+//!   operator and a symplectic Lie-group integrator), behind the optional
+//!   `physics` feature and re-exported as `garust::physics`; see RFC-010.
 //!
-//! This crate re-exports everything from both, so `use garust::…` is
+//! This crate re-exports the first two in full, so `use garust::…` is
 //! unchanged; reach past it to a member crate only when you want the
 //! kernel without the geometry (or vice versa).
 //!
@@ -152,6 +155,17 @@ pub use garust_core::{
 // --- The typed geometry layer --------------------------------------------
 #[doc(inline)]
 pub use garust_geo::{Conformal, Conformal3, Conformal3f, Motor, Motor3, Motor3f};
+
+// --- Optional rigid-body physics (the `physics` feature) ------------------
+/// Rigid-body physics on the PGA kernel — motors, an inertia operator, and a
+/// symplectic Lie-group integrator. Available under the `physics` feature
+/// (`garust = { version = "…", features = ["physics"] }`); see RFC-010.
+#[cfg(feature = "physics")]
+#[doc(inline)]
+pub use garust_physics as physics;
+#[cfg(feature = "physics")]
+#[doc(inline)]
+pub use garust_physics::{Inertia, RigidBody};
 
 // The signature-minting macro. `#[macro_export]` puts it at the
 // `garust_core` root; re-export it so downstream crates can write

@@ -95,5 +95,7 @@ jobs:
         run: cargo build -p garust-core --no-default-features --features libm --target thumbv7em-none-eabi
       - name: Build geo (no_std + libm)
         run: cargo build -p garust-geo --no-default-features --features libm --target thumbv7em-none-eabi
-      - name: Build umbrella (no_std + libm + serde + bytemuck)
-        run: cargo build -p garust --no-default-features --features "libm serde bytemuck" --target thumbv7em-none-eabi
+      - name: Build physics (no_std + libm)
+        run: cargo build -p garust-physics --no-default-features --features libm --target thumbv7em-none-eabi
+      - name: Build umbrella (no_std + libm + serde + bytemuck + physics)
+        run: cargo build -p garust --no-default-features --features "libm serde bytemuck physics" --target thumbv7em-none-eabi

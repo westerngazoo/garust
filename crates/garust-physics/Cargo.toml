@@ -1,0 +1,23 @@
+[package]
+name = "garust-physics"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Rigid-body physics on the garust PGA kernel: motors, an inertia operator, and a symplectic Lie-group integrator."
+license.workspace = true
+repository.workspace = true
+keywords = ["geometric-algebra", "physics", "rigid-body", "pga", "simulation"]
+categories = ["mathematics", "simulation"]
+
+[features]
+default = ["std"]
+# Standard-library float math, forwarded to the kernel + geometry layers.
+std = ["garust-core/std", "garust-geo/std"]
+# `no_std` float math via `libm`, forwarded to both.
+libm = ["garust-core/libm", "garust-geo/libm"]
+
+[dependencies]
+# Inherit `default-features = false` from `[workspace.dependencies]`, so this
+# crate's `std`/`libm` feature picks the math backend.
+garust-core = { workspace = true }
+garust-geo = { workspace = true }
