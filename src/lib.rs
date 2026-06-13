@@ -143,9 +143,9 @@ pub use garust_geo::{cga, conformal, motor, pga};
 // --- The kernel: traits, the multivector, signatures, and aliases --------
 #[doc(inline)]
 pub use garust_core::{
-    multivector_derivative, partials, Algebra, BladeStore, Cga3, Cga3Sig, Cga3f, Dual,
-    ExtendedPhase, Multivector, Pga3, Pga3Sig, Pga3f, Phase, Real, Ring, Scalar, Sta, StaSig, Staf,
-    Vga2, Vga2Sig, Vga2f, Vga3, Vga3Sig, Vga3f,
+    differential, field_derivative, multivector_derivative, partials, vector_derivative, Algebra,
+    BladeStore, Cga3, Cga3Sig, Cga3f, Dual, ExtendedPhase, Multivector, Pga3, Pga3Sig, Pga3f,
+    Phase, Real, Ring, Scalar, Sta, StaSig, Staf, Vga2, Vga2Sig, Vga2f, Vga3, Vga3Sig, Vga3f,
 };
 
 // --- The typed geometry layer --------------------------------------------
