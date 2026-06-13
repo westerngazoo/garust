@@ -58,6 +58,7 @@ extern crate std;
 pub mod algebra;
 pub mod autodiff;
 pub mod calculus;
+pub mod catalog;
 pub mod cga;
 pub mod dual;
 pub mod dynamics;
@@ -85,6 +86,7 @@ pub use autodiff::Dual;
 pub use calculus::{
     differential, field_derivative, multivector_derivative, partials, vector_derivative,
 };
+pub use catalog::{GradeSet, Op};
 pub use dynamics::{ExtendedPhase, Phase};
 pub use multivector::Multivector;
 pub use scalar::{Real, Ring, Scalar};
