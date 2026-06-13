@@ -1,5 +1,5 @@
-//! Geometric calculus: the **multivector derivative** of a scalar-valued
-//! function, by forward-mode AD.
+//! Geometric calculus: derivatives of scalar- and multivector-valued
+//! functions of a multivector variable, by forward-mode AD.
 //!
 //! For a function `f(X)` of a multivector variable `X = Σ_J x_J e_J`, the
 //! multivector derivative (Hestenes; Doran & Lasenby, ch. 6) is
@@ -10,11 +10,10 @@
 //!
 //! where `{e_J}` is the basis of blades and `{e^J}` its reciprocal frame
 //! (`e^J = e_J / (e_J · e_J)`). The partials `∂f/∂x_J` are computed *exactly*
-//! with the [`Dual`] AD scalar — one forward pass per coefficient, seeding
-//! `ε` on `x_J` and reading the result's `deriv`. No symbolic work, no finite
-//! differences.
+//! with the [`Dual`] AD scalar — forward passes seeding `ε` on coefficients
+//! and reading the result's `deriv`. No symbolic work, no finite differences.
 //!
-//! Two functions, layered:
+//! For **scalar-valued** `f` (energies, losses, Hamiltonians), layered:
 //!
 //! - [`partials`] — the raw gradient packed into a multivector
 //!   (`coeff J = ∂f/∂x_J`), treating the coefficients as independent
@@ -26,9 +25,25 @@
 //!   identities — and Hamilton's equations `Q̇ = ∂_P H`, `Ṗ = −∂_Q H` —
 //!   covariant.
 //!
-//! **Cost:** `DIM` evaluations of `f` (one per blade). **Degenerate metrics:**
-//! a *null* blade has `e_J · e_J = 0`, so its reciprocal does not exist;
-//! [`multivector_derivative`] drops those directions (sets them to zero). In a
+//! For **multivector-valued** maps `F: G → G` (versor-valued networks,
+//! geometric message passing, physical fields):
+//!
+//! - [`differential`] — the pushforward `dF_x(h)`, exact in **one** forward
+//!   pass (the JVP of ML autodiff). The Jacobian, served one column at a
+//!   time, without ever materializing a `DIM × DIM` matrix.
+//! - [`field_derivative`] — `∂_X F = Σ_J e^J (∂F/∂x_J)`, the
+//!   multivector derivative of a field: each partial (itself a multivector)
+//!   is carried back through the reciprocal frame by the **geometric
+//!   product**. Reduces to [`multivector_derivative`] when `F` is scalar.
+//! - [`vector_derivative`] — the same sum restricted to the grade-1
+//!   directions: the `∇` of vector calculus, packing divergence and curl
+//!   into one object (`∇F = ∇·F + ∇∧F`).
+//!
+//! **Cost:** one evaluation of `f` per seeded direction — `DIM` for the
+//! gradients and [`field_derivative`], `N` for [`vector_derivative`], and a
+//! single one for [`differential`]. **Degenerate metrics:** a *null* blade
+//! has `e_J · e_J = 0`, so its reciprocal does not exist; the
+//! reciprocal-frame operators drop those directions (set them to zero). In a
 //! non-degenerate algebra (e.g. spacetime `G(3,1,0)`) every blade squares to
 //! `±1`, so the full derivative is recovered.
 
@@ -36,7 +51,7 @@ use crate::algebra::Algebra;
 use crate::autodiff::Dual;
 use crate::multivector::Multivector;
 use crate::scalar::Real;
-use crate::signature::blade_product;
+use crate::signature::{blade_product, grade_of};
 
 /// The raw coefficient gradient of a scalar function `f`: the multivector
 /// whose blade-`J` coefficient is `∂f/∂x_J`, computed by forward-mode AD.
@@ -97,11 +112,136 @@ where
     grad
 }
 
+/// The differential (pushforward) of a multivector-valued map `F` at `x`
+/// along the direction `h`:
+///
+/// ```text
+/// dF_x(h) = d/dε F(x + ε·h) |_{ε=0}
+/// ```
+///
+/// Computed exactly in **one** forward pass by seeding every coefficient's
+/// dual part from `h` — the Jacobian-vector product (JVP) of ML autodiff.
+/// Linear in `h`; column `J` of the Jacobian is
+/// `differential(x, &basis(J), f)`, so the full matrix is available on
+/// demand without ever being stored.
+///
+/// ```
+/// use garust_core::{calculus::differential, Dual, Vga2};
+///
+/// // F(X) = X² — the differential is the (non-commutative!) product rule:
+/// // dF_x(h) = x·h + h·x.
+/// let x = Vga2::basis(1) + Vga2::basis(3) * 2.0; // e1 + 2·e12
+/// let h = Vga2::basis(2) - Vga2::scalar(0.5); //    e2 − ½
+/// let d = differential(&x, &h, |m| *m * *m);
+/// assert_eq!(d, x * h + h * x);
+/// ```
+pub fn differential<A, T, F>(
+    x: &Multivector<A, T>,
+    h: &Multivector<A, T>,
+    f: F,
+) -> Multivector<A, T>
+where
+    A: Algebra,
+    T: Real,
+    F: Fn(&Multivector<A, Dual<T>>) -> Multivector<A, Dual<T>>,
+{
+    let mut xd = Multivector::<A, Dual<T>>::zero();
+    for i in 0..A::DIM {
+        xd.coeffs[i] = Dual::new(x.coeffs[i], h.coeffs[i]);
+    }
+    let fd = f(&xd);
+    let mut out = Multivector::<A, T>::zero();
+    for i in 0..A::DIM {
+        out.coeffs[i] = fd.coeffs[i].deriv;
+    }
+    out
+}
+
+/// The multivector derivative of a multivector-valued **field**:
+///
+/// ```text
+/// ∂_X F = Σ_J e^J (∂F/∂x_J)
+/// ```
+///
+/// [`multivector_derivative`] generalized from scalar to multivector
+/// outputs: each partial `∂F/∂x_J` (a full multivector, one
+/// [`differential`] pass per blade) is carried back through the reciprocal
+/// frame by the **geometric product** `e^J (∂F/∂x_J)`, so the result mixes
+/// grades exactly as Hestenes' `∂_X` does. When `F` is scalar-valued this
+/// collapses to [`multivector_derivative`]; when only the grade-1
+/// directions matter, use the cheaper [`vector_derivative`].
+///
+/// Null blades (degenerate metrics) have no reciprocal and contribute
+/// nothing. Cost: `DIM` evaluations of `f`.
+pub fn field_derivative<A, T, F>(x: &Multivector<A, T>, f: F) -> Multivector<A, T>
+where
+    A: Algebra,
+    T: Real,
+    F: Fn(&Multivector<A, Dual<T>>) -> Multivector<A, Dual<T>>,
+{
+    let mut acc = Multivector::<A, T>::zero();
+    for j in 0..A::DIM {
+        let (_idx, sign) = blade_product(j, j, A::P, A::Q);
+        if sign == 0 {
+            continue; // null direction: no reciprocal
+        }
+        let column = differential(x, &Multivector::<A, T>::basis(j), &f);
+        // e^J = (e_J · e_J)·e_J, so the reciprocal is the blade itself up
+        // to the metric sign.
+        let term = Multivector::<A, T>::basis(j) * column;
+        if sign > 0 {
+            acc += term;
+        } else {
+            acc -= term;
+        }
+    }
+    acc
+}
+
+/// The **vector derivative** `∇F = Σ_k e^k (∂F/∂x_k)` — the grade-1
+/// restriction of [`field_derivative`], differentiating only along the
+/// vector directions: the `∇` of vector calculus, lifted to multivector
+/// fields.
+///
+/// For a vector field in a Euclidean algebra the single result packs both
+/// classical first-order operators: `∇F = ∇·F + ∇∧F` — divergence in the
+/// scalar part, curl in the bivector part.
+///
+/// Null vectors (e.g. PGA's `e0`) contribute nothing. Cost: `N`
+/// evaluations of `f`.
+pub fn vector_derivative<A, T, F>(x: &Multivector<A, T>, f: F) -> Multivector<A, T>
+where
+    A: Algebra,
+    T: Real,
+    F: Fn(&Multivector<A, Dual<T>>) -> Multivector<A, Dual<T>>,
+{
+    let mut acc = Multivector::<A, T>::zero();
+    for j in 0..A::DIM {
+        if grade_of(j) != 1 {
+            continue;
+        }
+        let (_idx, sign) = blade_product(j, j, A::P, A::Q);
+        if sign == 0 {
+            continue; // null vector: no reciprocal
+        }
+        let column = differential(x, &Multivector::<A, T>::basis(j), &f);
+        let term = Multivector::<A, T>::basis(j) * column;
+        if sign > 0 {
+            acc += term;
+        } else {
+            acc -= term;
+        }
+    }
+    acc
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{multivector_derivative, partials};
+    use super::{
+        differential, field_derivative, multivector_derivative, partials, vector_derivative,
+    };
     use crate::autodiff::Dual;
-    use crate::{Multivector, Vga2Sig, Vga3Sig};
+    use crate::{Multivector, Vga2Sig, Vga3, Vga3Sig};
 
     #[test]
     fn partials_of_a_bilinear_form() {
@@ -151,5 +291,70 @@ mod tests {
         assert_eq!(g.coeffs[1], 3.0);
         assert_eq!(g.coeffs[4], -2.0);
         assert_eq!(g.coeffs[2], 0.0);
+    }
+
+    // --- Multivector-valued maps -------------------------------------------
+
+    #[test]
+    fn differential_obeys_the_noncommutative_product_rule() {
+        // F(X) = X²: dF_x(h) = x·h + h·x — order matters and both terms show.
+        let x = Vga3::basis(1) + Vga3::basis(0b011) * 2.0 - Vga3::scalar(0.5);
+        let h = Vga3::basis(2) + Vga3::basis(0b110) * 3.0;
+        let d = differential(&x, &h, |m| *m * *m);
+        assert_eq!(d, x * h + h * x);
+    }
+
+    #[test]
+    fn differential_is_linear_in_the_direction() {
+        let x = Vga3::basis(1) * 1.5 + Vga3::basis(0b101);
+        let (a, b) = (Vga3::basis(2) * 2.0, Vga3::basis(0b011) - Vga3::scalar(1.0));
+        let f = |m: &Multivector<Vga3Sig, Dual<f64>>| *m * *m * *m;
+        let lhs = differential(&x, &(a + b), f);
+        let rhs = differential(&x, &a, f) + differential(&x, &b, f);
+        for i in 0..8 {
+            assert!((lhs.coeffs[i] - rhs.coeffs[i]).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn field_derivative_collapses_to_the_scalar_one() {
+        // Embed a scalar function as a scalar-valued field: ∂_X agrees.
+        let mut x = Multivector::<Vga2Sig, f64>::zero();
+        x.coeffs[1] = 2.0;
+        x.coeffs[3] = 4.0;
+        let scalar_f = |m: &Multivector<Vga2Sig, Dual<f64>>| {
+            m.coeffs[1] * m.coeffs[1] + m.coeffs[3] * m.coeffs[3]
+        };
+        let field_f = |m: &Multivector<Vga2Sig, Dual<f64>>| {
+            Multivector::<Vga2Sig, Dual<f64>>::scalar(scalar_f(m))
+        };
+        assert_eq!(
+            field_derivative(&x, field_f),
+            multivector_derivative(&x, scalar_f)
+        );
+    }
+
+    #[test]
+    fn vector_derivative_of_the_identity_field_is_the_dimension() {
+        // ∇x = Σ_k e^k e_k = n: the divergence of the position field.
+        let x = Vga3::basis(1) * 0.3 + Vga3::basis(2) * 7.0; // any point
+        let d = vector_derivative(&x, |m| m.grade(1));
+        assert_eq!(d, Vga3::scalar(3.0));
+    }
+
+    #[test]
+    fn vector_derivative_packs_divergence_and_curl() {
+        // The plane rotation field F = x₁e2 − x₂e1: divergence-free, curl 2e12.
+        let x = Vga3::basis(1) * 0.4 - Vga3::basis(2) * 1.1;
+        let f = |m: &Multivector<Vga3Sig, Dual<f64>>| {
+            let mut out = Multivector::<Vga3Sig, Dual<f64>>::zero();
+            out.coeffs[2] = m.coeffs[1]; //  x₁ e2
+            out.coeffs[1] = -m.coeffs[2]; // −x₂ e1
+            out
+        };
+        let d = vector_derivative(&x, f);
+        let mut expected = Vga3::zero();
+        expected.coeffs[0b011] = 2.0; // pure curl: 2·e12, zero divergence
+        assert_eq!(d, expected);
     }
 }
