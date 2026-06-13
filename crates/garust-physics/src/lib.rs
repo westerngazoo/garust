@@ -8,34 +8,37 @@
 //!
 //! ## What this version covers
 //!
-//! Rotational dynamics about the centre of mass: a spinning body, free or
-//! under an applied torque. This is the classic test bed — it is where
-//! energy/momentum conservation and the Dzhanibekov (tennis-racket) effect
-//! live — and it exercises the keystone of RFC-010, the **symplectic
-//! Lie-group integrator**: momentum is advanced by an explicit symplectic
-//! *splitting* method (exact rotation per principal axis, so it conserves
-//! `‖Π‖` exactly and energy without secular drift), and the orientation is
-//! transported *on the group* by the exponential map, so it stays a unit
-//! versor by construction.
+//! Full **6-DOF** motion of a free or forced rigid body: rotation about the
+//! centre of mass and translation of it. The rotational half is the keystone
+//! of RFC-010, the **symplectic Lie-group integrator** — momentum is advanced
+//! by an explicit symplectic *splitting* (exact rotation per principal axis,
+//! conserving `‖Π‖` exactly and energy without secular drift) and the
+//! orientation is transported *on the group* by `exp`, staying a unit versor
+//! by construction. The translational half is a linear leapfrog on the centre
+//! of mass; the two are independent for a force applied at the centre of
+//! mass, so the composed step is symplectic in all six degrees of freedom.
 //!
-//! Full 6-DOF motion (coupled translation), contacts, and constraints are
-//! the next slices of RFC-010.
+//! Contacts and constraints (a `World` with collision response) are the next
+//! slices of RFC-010.
 //!
 //! ```
 //! use garust_physics::{Inertia, RigidBody};
 //! use garust_core::Pga3;
 //!
-//! // An asymmetric body, spun mostly about its first principal axis.
+//! // An asymmetric body, spun about its first principal axis and drifting.
 //! let inertia = Inertia::principal([2.0, 3.0, 4.0]);
-//! let mut body = RigidBody::at_rest();
+//! let mut body = RigidBody::new(2.0); // mass 2
 //! body.angular_momentum = Pga3::basis(0b0110); // Π = e23  (spin about x)
+//! body.linear_momentum = [4.0, 0.0, 0.0]; // drifting along +x
 //!
 //! let e0 = body.kinetic_energy(&inertia);
 //! for _ in 0..1000 {
-//!     body = body.step(0.01, &inertia, Pga3::zero()); // free: zero torque
+//!     body = body.step(0.01, &inertia, [0.0; 3], Pga3::zero()); // free
 //! }
-//! // Symplectic ⇒ energy and ‖Π‖ stay put.
+//! // Symplectic ⇒ total (rotational + translational) energy stays put,
 //! assert!((body.kinetic_energy(&inertia) - e0).abs() < 1e-6);
+//! // and the centre of mass has drifted ~40 units along x.
+//! assert!((body.position[0] - 20.0).abs() < 1e-9);
 //! ```
 
 #![cfg_attr(not(test), no_std)]
@@ -100,36 +103,78 @@ impl Inertia {
     }
 }
 
-/// A rigid body: an orientation (`Motor`) and a body-frame angular-momentum
-/// bivector.
+/// A rigid body with full 6-DOF state: an orientation (`Motor`) and
+/// body-frame angular momentum about the centre of mass, plus the centre of
+/// mass's world position and linear momentum.
 ///
-/// The momentum is stored rather than the velocity because momentum is what
-/// the symplectic integrator advances (and what an impulse adds to); recover
-/// the angular velocity with [`RigidBody::angular_velocity`].
+/// Momentum is stored rather than velocity because momentum is what the
+/// symplectic integrator advances (and what an impulse adds to); recover the
+/// velocities with [`RigidBody::angular_velocity`] / [`RigidBody::velocity`],
+/// and the full body→world transform with [`RigidBody::pose`].
+///
+/// Linear quantities are plain world-frame 3-vectors by design: the centre of
+/// mass *is* a point and its momentum a vector, with no Clifford subtlety to
+/// model — the geometric-algebra structure is carried by the orientation
+/// `Motor`, the angular-momentum bivector, and the `exp`-based rotation.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RigidBody {
-    /// Orientation of the body frame in the world frame.
+    /// Orientation of the body frame about its centre of mass.
     pub orientation: Motor<f64>,
-    /// Body-frame angular momentum `Π`, a grade-2 bivector.
+    /// Body-frame angular momentum `Π` about the centre of mass, a grade-2
+    /// bivector.
     pub angular_momentum: Pga3,
+    /// Centre-of-mass position in the world frame.
+    pub position: [f64; 3],
+    /// Centre-of-mass linear momentum in the world frame.
+    pub linear_momentum: [f64; 3],
+    /// Total mass (must be positive for the linear dynamics).
+    pub mass: f64,
 }
 
 impl RigidBody {
-    /// A body at the identity orientation with zero angular momentum.
-    pub fn at_rest() -> Self {
+    /// A body of the given `mass` at the world origin, identity orientation,
+    /// and completely at rest.
+    pub fn new(mass: f64) -> Self {
         Self {
             orientation: Motor::identity(),
             angular_momentum: Pga3::zero(),
+            position: [0.0; 3],
+            linear_momentum: [0.0; 3],
+            mass,
         }
     }
 
-    /// Build a body from an orientation and a body-frame angular velocity
-    /// (converted to momentum via the inertia).
+    /// A unit-mass body at the origin, at rest — `new(1.0)`.
+    pub fn at_rest() -> Self {
+        Self::new(1.0)
+    }
+
+    /// A unit-mass body with the given orientation and body-frame angular
+    /// velocity (converted to momentum via the inertia), at the origin with
+    /// no linear motion. Set [`mass`](RigidBody::mass) /
+    /// [`linear_momentum`](RigidBody::linear_momentum) afterwards for the
+    /// general case.
     pub fn spinning(orientation: Motor<f64>, inertia: &Inertia, omega: Pga3) -> Self {
         Self {
             orientation,
             angular_momentum: inertia.momentum_of(&omega),
+            ..Self::new(1.0)
         }
+    }
+
+    /// The full body→world transform `T(position) ∘ orientation`: rotate
+    /// about the centre of mass, then translate it to its world position.
+    pub fn pose(&self) -> Motor<f64> {
+        Motor::translator(self.position[0], self.position[1], self.position[2]) * self.orientation
+    }
+
+    /// The centre-of-mass velocity `v = p/m`.
+    pub fn velocity(&self) -> [f64; 3] {
+        [
+            self.linear_momentum[0] / self.mass,
+            self.linear_momentum[1] / self.mass,
+            self.linear_momentum[2] / self.mass,
+        ]
     }
 
     /// The body-frame angular velocity `ω = 𝓘⁻¹(Π)`.
@@ -138,7 +183,7 @@ impl RigidBody {
     }
 
     /// Rotational kinetic energy `½ ⟨Π, 𝓘⁻¹Π⟩ = ½ Σ Πₖ²/Iₖ`.
-    pub fn kinetic_energy(&self, inertia: &Inertia) -> f64 {
+    pub fn rotational_kinetic_energy(&self, inertia: &Inertia) -> f64 {
         let mut e = 0.0;
         for (b, &i) in Inertia::principal_planes()
             .iter()
@@ -148,6 +193,19 @@ impl RigidBody {
             e += c * c / i;
         }
         0.5 * e
+    }
+
+    /// Translational kinetic energy `‖p‖²/(2m)`.
+    pub fn translational_kinetic_energy(&self) -> f64 {
+        let p = &self.linear_momentum;
+        (p[0] * p[0] + p[1] * p[1] + p[2] * p[2]) / (2.0 * self.mass)
+    }
+
+    /// Total kinetic energy — rotational plus translational. Conserved (no
+    /// secular drift) for a free body, since both halves are integrated
+    /// symplectically.
+    pub fn kinetic_energy(&self, inertia: &Inertia) -> f64 {
+        self.rotational_kinetic_energy(inertia) + self.translational_kinetic_energy()
     }
 
     /// The squared norm of the angular momentum, `‖Π‖² = Σ Πₖ²` — a Casimir
@@ -162,15 +220,10 @@ impl RigidBody {
         self.orientation.apply(&self.angular_momentum)
     }
 
-    /// Advance the body by `dt` under a constant body-frame `torque`
-    /// bivector (pass `Pga3::zero()` for free motion).
-    ///
-    /// Strang composition of a torque half-kick, the symplectic free-body
-    /// splitting (exact rotation about each principal axis, second order),
-    /// and a second half-kick. The orientation is transported on the group
-    /// by `exp`, so it stays a unit versor; the splitting conserves `‖Π‖`
-    /// exactly and the energy without secular drift.
-    pub fn step(&self, dt: f64, inertia: &Inertia, torque: Pga3) -> Self {
+    /// The rotational half-step: the symplectic free-body splitting about the
+    /// centre of mass, returning the advanced orientation and body-frame
+    /// angular momentum.
+    fn step_rotational(&self, dt: f64, inertia: &Inertia, torque: Pga3) -> (Motor<f64>, Pga3) {
         let planes = Inertia::principal_planes();
         let moments = inertia.moments();
 
@@ -197,9 +250,42 @@ impl RigidBody {
         }
 
         pi += torque * (0.5 * dt); // half-kick
+        (Motor::from_versor(versor.normalized()), pi)
+    }
+
+    /// Advance the body by `dt` under a constant world-frame `force` (applied
+    /// at the centre of mass) and body-frame `torque` bivector. Pass
+    /// `[0.0; 3]` and `Pga3::zero()` for free motion.
+    ///
+    /// Rotation about the centre of mass and translation of it are
+    /// **independent** for a force applied at the centre of mass, so the step
+    /// composes two symplectic integrators on disjoint state: the rotational
+    /// splitting (orientation transported on the group by `exp`, conserving
+    /// `‖Π‖` and energy) and a linear leapfrog (kick–drift–kick) on the
+    /// centre of mass. (Model a force applied off-centre as a force at the
+    /// centre of mass plus the torque it induces.)
+    pub fn step(&self, dt: f64, inertia: &Inertia, force: [f64; 3], torque: Pga3) -> Self {
+        let (orientation, angular_momentum) = self.step_rotational(dt, inertia, torque);
+
+        // Linear leapfrog on the centre of mass: kick, drift, kick.
+        let mut linear_momentum = self.linear_momentum;
+        let mut position = self.position;
+        for ((p, x), &f) in linear_momentum
+            .iter_mut()
+            .zip(position.iter_mut())
+            .zip(force.iter())
+        {
+            *p += f * (0.5 * dt);
+            *x += *p / self.mass * dt;
+            *p += f * (0.5 * dt);
+        }
+
         Self {
-            orientation: Motor::from_versor(versor.normalized()),
-            angular_momentum: pi,
+            orientation,
+            angular_momentum,
+            position,
+            linear_momentum,
+            mass: self.mass,
         }
     }
 }
@@ -208,6 +294,7 @@ impl RigidBody {
 mod tests {
     use super::{Inertia, RigidBody};
     use garust_core::Pga3;
+    use proptest::prelude::*;
 
     fn max_coeff_diff(a: &Pga3, b: &Pga3) -> f64 {
         a.coeffs
@@ -242,7 +329,7 @@ mod tests {
         let world0 = body.world_angular_momentum();
 
         for _ in 0..10_000 {
-            body = body.step(0.01, &inertia, Pga3::zero());
+            body = body.step(0.01, &inertia, [0.0; 3], Pga3::zero());
         }
 
         // ‖Π‖² is a Casimir — conserved to machine precision.
@@ -270,7 +357,7 @@ mod tests {
         let mut body = RigidBody::at_rest();
         body.angular_momentum = Pga3::basis(0b0101) * 2.0 + Pga3::basis(0b0011) * 0.3;
         for _ in 0..5_000 {
-            body = body.step(0.01, &inertia, Pga3::zero());
+            body = body.step(0.01, &inertia, [0.0; 3], Pga3::zero());
         }
         let v = body.orientation.versor();
         // R ~R = 1.
@@ -294,7 +381,7 @@ mod tests {
         let mut min_y = start;
         let mut max_y = start;
         for _ in 0..20_000 {
-            body = body.step(0.005, &inertia, Pga3::zero());
+            body = body.step(0.005, &inertia, [0.0; 3], Pga3::zero());
             let y = comp(&body.angular_momentum, 1);
             min_y = min_y.min(y);
             max_y = max_y.max(y);
@@ -305,5 +392,116 @@ mod tests {
         assert!(min_y < -4.0, "no flip: min Π_y = {min_y}");
         assert!(max_y > 4.0, "did not return: max Π_y = {max_y}");
         assert!((body.angular_momentum_squared() - l0).abs() < 1e-6);
+    }
+
+    // --- 6-DOF: translation ------------------------------------------------
+
+    #[test]
+    fn free_body_drifts_in_a_straight_line() {
+        let inertia = Inertia::principal([2.0, 3.0, 4.0]);
+        let mut body = RigidBody::new(2.0);
+        body.angular_momentum = Pga3::basis(0b0110) * 1.1; // also spinning
+        body.linear_momentum = [4.0, -2.0, 1.0];
+        let e0 = body.kinetic_energy(&inertia);
+        let p0 = body.linear_momentum;
+
+        for _ in 0..1000 {
+            body = body.step(0.01, &inertia, [0.0; 3], Pga3::zero());
+        }
+
+        // Linear momentum is conserved exactly (no force).
+        assert_eq!(body.linear_momentum, p0);
+        // CoM has drifted by velocity × time = (p/m)·10.
+        let t = 10.0;
+        for (i, (&p, &x)) in p0.iter().zip(body.position.iter()).enumerate() {
+            let expect = p / 2.0 * t;
+            assert!((x - expect).abs() < 1e-9, "axis {i}: {x}");
+        }
+        // Total (rotational + translational) energy is conserved.
+        assert!((body.kinetic_energy(&inertia) - e0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn constant_force_accelerates_the_centre_of_mass() {
+        // Leapfrog is exact for a constant force: from rest, x = ½ a t².
+        let inertia = Inertia::principal([1.0, 1.0, 1.0]);
+        let mut body = RigidBody::new(2.0); // m = 2
+        let force = [6.0, 0.0, 0.0]; // a = F/m = 3
+        for _ in 0..1000 {
+            body = body.step(0.01, &inertia, force, Pga3::zero());
+        }
+        let t = 10.0;
+        let a = 3.0;
+        assert!((body.position[0] - 0.5 * a * t * t).abs() < 1e-9); // 150
+        assert!((body.linear_momentum[0] - body.mass * a * t).abs() < 1e-9); // 60
+    }
+
+    #[test]
+    fn pose_places_a_body_point_at_the_centre_of_mass() {
+        let mut body = RigidBody::new(1.0);
+        body.position = [1.0, 2.0, 3.0];
+        let here = body
+            .pose()
+            .apply(&Pga3::point(0.0, 0.0, 0.0))
+            .cleaned(1e-10);
+        assert!(max_coeff_diff(&here, &Pga3::point(1.0, 2.0, 3.0)) < 1e-9);
+    }
+
+    #[test]
+    fn rotation_and_translation_are_independent() {
+        // A body that both spins and drifts: each invariant holds as if the
+        // other motion were absent.
+        let inertia = Inertia::principal([2.0, 3.0, 4.0]);
+        let mut body = RigidBody::new(1.5);
+        body.angular_momentum =
+            Pga3::basis(0b0110) * 1.3 + Pga3::basis(0b0101) * -0.7 + Pga3::basis(0b0011) * 0.4;
+        body.linear_momentum = [2.0, 5.0, -1.0];
+        let l0 = body.angular_momentum_squared();
+        let world0 = body.world_angular_momentum();
+
+        for _ in 0..5000 {
+            body = body.step(0.01, &inertia, [0.0; 3], Pga3::zero());
+        }
+        // Rotational invariants survive the simultaneous translation.
+        assert!((body.angular_momentum_squared() - l0).abs() < 1e-9);
+        assert!(max_coeff_diff(&body.world_angular_momentum(), &world0) < 1e-3);
+        // And the orientation is still a unit versor.
+        let v = body.orientation.versor();
+        assert!(((v * v.reverse()).scalar_part() - 1.0).abs() < 1e-9);
+    }
+
+    // --- Property-based conservation ---------------------------------------
+
+    proptest! {
+        // Over random inertias, spins, drifts, masses, and step sizes, the
+        // integrator's exact invariants hold: ‖Π‖² and the orientation norm
+        // are preserved, and a free body's linear momentum never changes.
+        #[test]
+        fn free_motion_preserves_the_invariants(
+            ix in 0.5_f64..5.0, iy in 0.5_f64..5.0, iz in 0.5_f64..5.0,
+            a in -3.0_f64..3.0, b in -3.0_f64..3.0, c in -3.0_f64..3.0,
+            px in -3.0_f64..3.0, py in -3.0_f64..3.0, pz in -3.0_f64..3.0,
+            mass in 0.5_f64..5.0,
+            dt in 0.001_f64..0.02,
+        ) {
+            let inertia = Inertia::principal([ix, iy, iz]);
+            let planes = Inertia::principal_planes();
+            let mut body = RigidBody::new(mass);
+            body.angular_momentum = planes[0] * a + planes[1] * b + planes[2] * c;
+            body.linear_momentum = [px, py, pz];
+            let l0 = body.angular_momentum_squared();
+
+            for _ in 0..500 {
+                body = body.step(dt, &inertia, [0.0; 3], Pga3::zero());
+            }
+
+            // ‖Π‖² is a Casimir (each sub-step is a norm-preserving sandwich).
+            prop_assert!((body.angular_momentum_squared() - l0).abs() < 1e-7);
+            // The orientation stays a unit versor.
+            let v = body.orientation.versor();
+            prop_assert!(((v * v.reverse()).scalar_part() - 1.0).abs() < 1e-7);
+            // Free linear momentum is untouched (force is zero throughout).
+            prop_assert_eq!(body.linear_momentum, [px, py, pz]);
+        }
     }
 }

@@ -21,3 +21,7 @@ libm = ["garust-core/libm", "garust-geo/libm"]
 # crate's `std`/`libm` feature picks the math backend.
 garust-core = { workspace = true }
 garust-geo = { workspace = true }
+
+[dev-dependencies]
+# Property-based conservation tests; dev-only, never in the normal graph.
+proptest = { workspace = true }
