@@ -18,8 +18,10 @@
 //! of mass; the two are independent for a force applied at the centre of
 //! mass, so the composed step is symplectic in all six degrees of freedom.
 //!
-//! Contacts and constraints (a `World` with collision response) are the next
-//! slices of RFC-010.
+//! Collision detection and frictionless impulse response for **spheres** live
+//! in [`contact`]. A broadphase, friction, flat-vs-flat contacts, and a
+//! `World` that drives the whole `integrate → detect → resolve` loop are the
+//! next slices of RFC-010.
 //!
 //! ```
 //! use garust_physics::{Inertia, RigidBody};
@@ -43,6 +45,8 @@
 
 #![cfg_attr(not(test), no_std)]
 #![deny(missing_docs)]
+
+pub mod contact;
 
 use garust_core::Pga3;
 use garust_geo::Motor;
