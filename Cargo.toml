@@ -13,6 +13,12 @@ categories = ["mathematics"]
 [lib]
 name = "garust"
 
+# The physics example needs the optional `physics` feature; gating it here
+# means the default `--all-targets` build skips it instead of failing.
+[[example]]
+name = "physics_world"
+required-features = ["physics"]
+
 [features]
 default = ["std"]
 # Standard-library float math, forwarded to both members. On by default; the
