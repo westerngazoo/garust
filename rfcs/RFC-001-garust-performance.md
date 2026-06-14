@@ -219,3 +219,49 @@ form.) A `wedge_matches_reference` proptest pins the table path bit-faithful
 to the definitional `swap_sign` loop, mirroring the geometric product's
 reference law. Still open: `f32` SIMD lanes / wider vectors, pending an
 end-to-end VIGA re-measurement.
+
+
+## Appendix G — Release builds, and the fused-sandwich dead end
+
+Two findings from a downstream (VI engine) performance report that measured
+garust at ~197k `Motor::apply`/sec and concluded a rewrite was needed.
+
+**1. The figure was a debug build.** Timing the exact operation here:
+
+| build   | ns/op | ops/sec |
+|---------|-------|---------|
+| debug   | ~2050 | ~0.5 M  |
+| release | ~80   | ~12 M   |
+
+A ~25× gap, the normal debug↔release ratio for arithmetic-dense code. In
+release garust already does ~12 M single-point `Motor::apply`/sec — already
+*past* a 5 M/sec target — so the premise ("garust is an order of magnitude
+behind matrices") was a build-profile artifact, not an algorithmic one. The
+README's *Performance* section now states this up front, and recommends the
+`lto = true` / `codegen-units = 1` release profile for consumers.
+
+Most of that report's other suggestions were already in garust: `Copy` /
+no-alloc / `no_std` (done), a compile-time Cayley table (done, Appendix C),
+and SIMD (the `wide` SoA batch path, Appendix E). The one genuinely-missing
+item — compressed typed storage with a fully *fused* product — was tried, and
+rejected on measurement:
+
+**2. Fusing the sandwich is slower.** A `Motor` is an even versor (8 of 16
+blades nonzero). The tempting "unroll the whole product at compile time" is to
+materialize `M x ~M` as one flat table of `(motor_a, input_k, motor_b) →
+output` terms over the 8 packed coefficients, applied in a single branchless
+loop. Built it (correct-by-construction from `blade_product`, proptested
+bit-equal to the generic sandwich) and benchmarked it:
+
+| path                         | ns/op |
+|------------------------------|-------|
+| existing two-stage sparse `M x ~M` | ~74  |
+| fully fused trilinear table  | ~390  |
+
+**5× slower.** The reason is asymptotic: the two-stage product computes `M·x`
+once (an `O(n·m)` pass producing an intermediate) then `·~M` (another
+`O(n·m)`), whereas the fused form enumerates `a × k × b` triples —
+`O(n² · m)` — re-deriving through the motor twice. Factorization beats fusion
+here. Reverted; not shipped. The lesson for the record: garust's existing
+sparse two-stage sandwich is already the right shape; "unroll everything" is a
+pessimization for the bilinear-in-the-versor sandwich.
