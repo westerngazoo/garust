@@ -205,6 +205,38 @@ All are off by default except `std`:
 [`libm`]: https://crates.io/crates/libm
 [`wide`]: https://crates.io/crates/wide
 
+## Performance
+
+**Benchmark in `--release`.** Geometric algebra is arithmetic-dense, so an
+unoptimized (debug) build runs it ~20–50× slower than release — enough to make
+garust look an order of magnitude behind hand-written matrices when it isn't.
+Measured on this machine, a single PGA `Motor::apply` (transform a point) is:
+
+| build | ns/op | ops/sec |
+|-------|-------|---------|
+| debug | ~2050 | ~0.5 M  |
+| release | ~80 | **~12 M** |
+
+That ~12 M/s is matrix-competitive while keeping the algebra exact (no gimbal
+lock; motors interpolate on the shortest path). For the last drop, set this in
+**your** binary's manifest (Cargo profiles don't inherit from dependencies):
+
+```toml
+[profile.release]
+lto = true
+codegen-units = 1
+```
+
+For **bulk** transforms — one motor over a whole point cloud — reach for the
+batch path, not a per-point loop: `Motor::apply_each` (and, under the `simd`
+feature, `apply_each_simd`, which lays the cloud out structure-of-arrays and
+vectorizes across objects). That is where the largest wins are.
+
+The kernel is already tuned for the single-op path too (compile-time Cayley
+table, sparse sandwich — see *Design notes*); micro-optimizations beyond it
+tend not to pay (e.g. fusing `M x ~M` into one table is *slower*, since it
+expands an `O(n·m)` two-stage product into an `O(n²·m)` one — see RFC-001).
+
 ## License
 
 Licensed under either of [MIT](LICENSE-MIT) or
