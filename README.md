@@ -207,19 +207,40 @@ All are off by default except `std`:
 
 ## Performance
 
-**Benchmark in `--release`.** Geometric algebra is arithmetic-dense, so an
-unoptimized (debug) build runs it ~20–50× slower than release — enough to make
-garust look an order of magnitude behind hand-written matrices when it isn't.
-Measured on this machine, a single PGA `Motor::apply` (transform a point) is:
+**Always benchmark in `--release`.** Geometric algebra is arithmetic-dense, so
+a debug build runs ~25× slower than release. A single PGA `Motor::apply`
+(transform a point) on this machine:
 
-| build | ns/op | ops/sec |
-|-------|-------|---------|
-| debug | ~2050 | ~0.5 M  |
-| release | ~80 | **~12 M** |
+| build   | ns/op | ops/sec |
+|---------|-------|---------|
+| debug   | ~2050 | ~0.5 M  |
+| release | ~74   | ~12 M   |
 
-That ~12 M/s is matrix-competitive while keeping the algebra exact (no gimbal
-lock; motors interpolate on the shortest path). For the last drop, set this in
-**your** binary's manifest (Cargo profiles don't inherit from dependencies):
+**Be honest about the matrix comparison.** ~12 M transforms/sec is fast in
+absolute terms — ample for scene graphs, pose blending, robotics — but a raw
+4×4 matrix or quaternion is *not* something garust out-runs. Apples-to-apples
+(see `cargo bench -p garust-geo --bench vs_nalgebra`):
+
+| op (release + LTO + simd) | garust | nalgebra | |
+|---------------------------|--------|----------|---|
+| transform a point         | 74 ns  | 1.5 ns   | ~50× |
+| compose two transforms    | 78 ns  | 2.9 ns   | ~27× |
+
+A matrix·vector is a handful of SIMD FLOPs; a motor sandwich `M x ~M` is a
+table-driven product doing far more arithmetic. **If raw transform throughput
+on huge point clouds is your bottleneck, use a matrix library.** garust earns
+its place on what matrices *can't* give cheaply: no gimbal lock, compact and
+smoothly-composable motors (`log` / `slerp` on the manifold), unified
+incidence (meet / join), and exact geometry in degenerate metrics like PGA.
+(A klein-style SIMD-packed specialized motor·point kernel can reach matrix
+parity; garust doesn't ship one yet.)
+
+For **bulk** transforms prefer `Motor::apply_each` (and `apply_each_simd` under
+the `simd` feature) over a per-point loop — though note from the bench that
+even the SIMD batch (~46 ns/point) trails a tight matrix loop.
+
+For the last drop on garust's own path, set this in **your** binary's manifest
+(Cargo profiles don't inherit from dependencies):
 
 ```toml
 [profile.release]
@@ -227,15 +248,10 @@ lto = true
 codegen-units = 1
 ```
 
-For **bulk** transforms — one motor over a whole point cloud — reach for the
-batch path, not a per-point loop: `Motor::apply_each` (and, under the `simd`
-feature, `apply_each_simd`, which lays the cloud out structure-of-arrays and
-vectorizes across objects). That is where the largest wins are.
-
-The kernel is already tuned for the single-op path too (compile-time Cayley
-table, sparse sandwich — see *Design notes*); micro-optimizations beyond it
-tend not to pay (e.g. fusing `M x ~M` into one table is *slower*, since it
-expands an `O(n·m)` two-stage product into an `O(n²·m)` one — see RFC-001).
+The kernel is already tuned for the single-op path (compile-time Cayley table,
+sparse sandwich — see *Design notes*); micro-optimizations beyond it tend not
+to pay (e.g. fusing `M x ~M` into one table is *slower* — `O(n²·m)` vs the
+two-stage `O(n·m)`; see RFC-001 Appendix G).
 
 ## License
 

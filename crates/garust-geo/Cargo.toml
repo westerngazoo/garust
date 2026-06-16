@@ -44,7 +44,15 @@ wide = { workspace = true, optional = true }
 proptest = { workspace = true }
 serde_json = { workspace = true }
 criterion = { workspace = true }
+# Dev-only, for the `vs_nalgebra` comparison benchmark. Never in the normal
+# dependency graph (dev-deps don't reach consumers), so the library stays
+# zero-dep and its MSRV check (which strips dev-deps) is unaffected.
+nalgebra = "0.33"
 
 [[bench]]
 name = "transforms"
+harness = false
+
+[[bench]]
+name = "vs_nalgebra"
 harness = false
