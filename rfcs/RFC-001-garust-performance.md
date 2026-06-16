@@ -265,3 +265,32 @@ once (an `O(n·m)` pass producing an intermediate) then `·~M` (another
 here. Reverted; not shipped. The lesson for the record: garust's existing
 sparse two-stage sandwich is already the right shape; "unroll everything" is a
 pessimization for the bilinear-in-the-versor sandwich.
+
+
+**3. The honest matrix comparison (correction).** An apples-to-apples
+benchmark — same rigid motion, same release+LTO+simd profile — now lives at
+`crates/garust-geo/benches/vs_nalgebra.rs`. It corrects an earlier overclaim
+in this saga ("garust is matrix-competitive"), which had compared garust's
+*raw* `Motor::apply` against a downstream *composite* update and so flattered
+garust:
+
+| op                     | garust (motor) | nalgebra (Isometry3 / Matrix4) | ratio |
+|------------------------|----------------|--------------------------------|-------|
+| transform a point      | ~74 ns         | ~1.5 ns                        | ~50×  |
+| compose two transforms | ~78 ns         | ~2.9 ns                        | ~27×  |
+| 1024-point cloud       | ~77 µs (~46 µs SIMD) | ~1.2 µs                  | ~25–60× |
+
+So the original RFC-002's *headline* (garust is much slower than 4×4 matrices
+for raw transforms) was **correct**, even though its stated reasons were not
+(it cited 32 blades — PGA has 16 — and "dynamic blade recomputation", which
+the const Cayley table already eliminates). A matrix·vector is a few SIMD
+FLOPs; the motor sandwich `M x ~M` is a table-driven product doing far more
+arithmetic, and the sparse loop does not autovectorize the way nalgebra's
+fixed-size arrays do. garust's value proposition is therefore *not* raw
+transform throughput — it is the mathematics matrices can't give cheaply (no
+gimbal lock, manifold `log`/`slerp`, unified meet/join incidence, exact
+degenerate-metric geometry). Reaching matrix parity for the transform hot path
+is possible but unbuilt: it needs a klein-style hand-written SIMD-packed
+specialized motor·point kernel (the generic table-driven path won't get there,
+and the fused-table attempt above went backwards). Left as future work, scoped
+honestly.
