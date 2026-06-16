@@ -235,9 +235,17 @@ incidence (meet / join), and exact geometry in degenerate metrics like PGA.
 (A klein-style SIMD-packed specialized motor·point kernel can reach matrix
 parity; garust doesn't ship one yet.)
 
-For **bulk** transforms prefer `Motor::apply_each` (and `apply_each_simd` under
-the `simd` feature) over a per-point loop — though note from the bench that
-even the SIMD batch (~46 ns/point) trails a tight matrix loop.
+**The pragmatic bridge: `Motor::to_matrix()`.** Keep poses as motors for the
+math (no gimbal lock, `compose` / `log` / `slerp`), then convert to a 4×4
+*once per frame* and run the bulk vertex transform as plain matrix·vector. That
+recovers full matrix speed — in the bench, a 1024-point cloud transforms in
+**~0.77 µs that way (≈ 0.75 ns/point), on par with the nalgebra matrix loop**
+and ~100× faster than the per-point sandwich. Best of both worlds; use it for
+the transform hot path.
+
+For bulk transforms that stay in GA, `Motor::apply_each` (and `apply_each_simd`
+under the `simd` feature) beat a per-point `apply` loop — but per the numbers
+above, `to_matrix()` is the move when raw throughput matters.
 
 For the last drop on garust's own path, set this in **your** binary's manifest
 (Cargo profiles don't inherit from dependencies):

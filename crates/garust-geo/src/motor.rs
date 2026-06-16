@@ -108,6 +108,40 @@ impl<T: Scalar> Motor<T> {
     pub fn norm_squared(&self) -> T {
         self.versor.norm_squared()
     }
+
+    /// The equivalent **column-major homogeneous 4×4 matrix** (`m[col][row]`),
+    /// mapping a point `(x, y, z, 1)` to `Σ_c m[c] · [x, y, z, 1][c]` — the
+    /// same Euclidean result as [`apply`](Motor::apply) on a point, as a plain
+    /// matrix.
+    ///
+    /// This is the bridge to matrix throughput: keep poses as motors (no
+    /// gimbal lock; clean [`compose`](Motor::compose) / [`log`](Motor::log) /
+    /// [`slerp`](Motor::slerp)), convert **once per frame**, then run the bulk
+    /// vertex transform as 4×4·vector — a handful of FLOPs per point, far
+    /// cheaper than the sandwich for large clouds (see the `vs_nalgebra`
+    /// benchmark). It is built from the images of the origin and the three
+    /// basis directions, so it reproduces [`apply`](Motor::apply) exactly
+    /// (proptested).
+    ///
+    /// Column-major matches GL and `nalgebra::Matrix4::from_column_slice`.
+    pub fn to_matrix(&self) -> [[T; 4]; 4] {
+        let img = |x, y, z| {
+            crate::pga::Point::new(x, y, z)
+                .transform(self)
+                .to_euclidean()
+        };
+        let (z, o) = (T::ZERO, T::ONE);
+        let (ox, oy, oz) = img(z, z, z); // image of the origin = translation
+        let (xx, xy, xz) = img(o, z, z); // image of the x-axis unit point
+        let (yx, yy, yz) = img(z, o, z);
+        let (zx, zy, zz) = img(z, z, o);
+        [
+            [xx - ox, xy - oy, xz - oz, z], // col 0: x-axis direction
+            [yx - ox, yy - oy, yz - oz, z], // col 1: y-axis direction
+            [zx - ox, zy - oy, zz - oz, z], // col 2: z-axis direction
+            [ox, oy, oz, o],                // col 3: translation
+        ]
+    }
 }
 
 #[cfg(feature = "simd")]
@@ -220,6 +254,31 @@ mod tests {
         assert_eq!(a.len(), b.len());
         for (i, (&x, &y)) in a.iter().zip(b.iter()).enumerate() {
             assert!((x - y).abs() < tol, "index {i}: {x} vs {y}");
+        }
+    }
+
+    #[test]
+    fn to_matrix_reproduces_apply() {
+        use crate::pga::Point;
+        // A general screw motion (two rotations + a translation).
+        let m = Motor::translator(1.0, -2.0, 0.5)
+            * Motor::rotor(0.9, Pga3::basis(0b0110))
+            * Motor::rotor(0.4, Pga3::basis(0b1010));
+        let mat = m.to_matrix(); // column-major: mat[col][row]
+        for &(x, y, z) in &[
+            (1.0, 2.0, 3.0),
+            (-1.0, 0.5, -2.0),
+            (0.0, 0.0, 0.0),
+            (4.0, -3.0, 1.0),
+        ] {
+            // result = x·col0 + y·col1 + z·col2 + col3
+            let got = [
+                mat[0][0] * x + mat[1][0] * y + mat[2][0] * z + mat[3][0],
+                mat[0][1] * x + mat[1][1] * y + mat[2][1] * z + mat[3][1],
+                mat[0][2] * x + mat[1][2] * y + mat[2][2] * z + mat[3][2],
+            ];
+            let (wx, wy, wz) = Point::new(x, y, z).transform(&m).to_euclidean();
+            approx_eq(&got, &[wx, wy, wz], 1e-12);
         }
     }
 

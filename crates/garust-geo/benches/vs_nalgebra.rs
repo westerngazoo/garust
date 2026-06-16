@@ -117,6 +117,30 @@ fn transform_cloud(c: &mut Criterion) {
         )
     });
 
+    // The bridge: convert the motor to a 4×4 once, then run a plain bulk
+    // matrix·point loop — garust's pose math, matrix throughput.
+    let mat = m.to_matrix();
+    let coords: Vec<[f64; 3]> = (0..n)
+        .map(|i| [i as f64 * 0.1, (i % 7) as f64, -(i as f64) * 0.05])
+        .collect();
+    g.bench_function("garust_via_to_matrix", |bn| {
+        bn.iter_batched(
+            || coords.clone(),
+            |mut buf| {
+                for p in buf.iter_mut() {
+                    let (x, y, z) = (p[0], p[1], p[2]);
+                    *p = [
+                        mat[0][0] * x + mat[1][0] * y + mat[2][0] * z + mat[3][0],
+                        mat[0][1] * x + mat[1][1] * y + mat[2][1] * z + mat[3][1],
+                        mat[0][2] * x + mat[1][2] * y + mat[2][2] * z + mat[3][2],
+                    ];
+                }
+                buf
+            },
+            BatchSize::SmallInput,
+        )
+    });
+
     let iso = na_isometry();
     let npts: Vec<Point3<f64>> = (0..n)
         .map(|i| Point3::new(i as f64 * 0.1, (i % 7) as f64, -(i as f64) * 0.05))
