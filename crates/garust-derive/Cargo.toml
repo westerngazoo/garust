@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 description = "Optional #[derive(Algebra)] proc-macro for garust — the derive path to a Clifford signature Cl(P, Q, R)."
+readme = "README.md"
 license.workspace = true
 repository.workspace = true
 keywords = ["geometric-algebra", "clifford-algebra", "derive", "proc-macro"]

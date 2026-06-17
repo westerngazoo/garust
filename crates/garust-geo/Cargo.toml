@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 description = "Typed geometry for garust: rigid-body Motors (PGA) and Conformal versors (CGA) over the garust-core algebra."
+readme = "README.md"
 license.workspace = true
 repository.workspace = true
 keywords = ["geometric-algebra", "pga", "cga", "motor", "conformal"]

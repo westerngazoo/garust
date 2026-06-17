@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 description = "Rigid-body physics on the garust PGA kernel: motors, an inertia operator, and a symplectic Lie-group integrator."
+readme = "README.md"
 license.workspace = true
 repository.workspace = true
 keywords = ["geometric-algebra", "physics", "rigid-body", "pga", "simulation"]
