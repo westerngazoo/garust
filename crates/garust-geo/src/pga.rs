@@ -66,6 +66,7 @@ macro_rules! pga_object {
             serde(transparent)
         )]
         #[repr(transparent)]
+        #[must_use]
         pub struct $name<T: Scalar = f64> {
             mv: Pga<T>,
         }

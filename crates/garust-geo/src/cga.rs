@@ -52,6 +52,7 @@ macro_rules! cga_object {
             serde(transparent)
         )]
         #[repr(transparent)]
+        #[must_use]
         pub struct $name<T: Scalar = f64> {
             mv: Cga<T>,
         }

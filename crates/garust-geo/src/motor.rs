@@ -38,8 +38,16 @@ type Pga<T> = Multivector<Pga3Sig, T>;
     serde(transparent)
 )]
 #[repr(transparent)]
+#[must_use]
 pub struct Motor<T: Scalar> {
     versor: Pga<T>,
+}
+
+/// Defaults to the identity motion (like `nalgebra::Isometry3::default()`).
+impl<T: Scalar> Default for Motor<T> {
+    fn default() -> Self {
+        Self::identity()
+    }
 }
 
 // SAFETY: `Motor` is `#[repr(transparent)]` over its `Pga<T>` versor, so it
@@ -255,6 +263,12 @@ mod tests {
         for (i, (&x, &y)) in a.iter().zip(b.iter()).enumerate() {
             assert!((x - y).abs() < tol, "index {i}: {x} vs {y}");
         }
+    }
+
+    #[test]
+    fn default_motor_is_identity() {
+        let p = Pga3::point(1.0, 2.0, 3.0);
+        approx_eq(&Motor::default().apply(&p).coeffs, &p.coeffs, 1e-12);
     }
 
     #[test]
