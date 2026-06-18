@@ -46,8 +46,16 @@ type Cga<T> = Multivector<Cga3Sig, T>;
     serde(transparent)
 )]
 #[repr(transparent)]
+#[must_use]
 pub struct Conformal<T: Scalar> {
     versor: Cga<T>,
+}
+
+/// Defaults to the identity transformation.
+impl<T: Scalar> Default for Conformal<T> {
+    fn default() -> Self {
+        Self::identity()
+    }
 }
 
 // SAFETY: `Conformal` is `#[repr(transparent)]` over its `Cga<T>` versor, so
@@ -237,6 +245,15 @@ mod tests {
         approx(
             Conformal::identity().apply(&p).to_euclidean(),
             (1.0, 2.0, 3.0),
+        );
+    }
+
+    #[test]
+    fn default_conformal_is_identity() {
+        let p = Cga3::cga_point(1.0, -2.0, 0.5);
+        approx(
+            Conformal::default().apply(&p).to_euclidean(),
+            (1.0, -2.0, 0.5),
         );
     }
 
