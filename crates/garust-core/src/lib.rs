@@ -57,6 +57,10 @@ extern crate std;
 
 pub mod algebra;
 pub mod autodiff;
+// Reverse-mode AD needs a heap tape + a thread-local, so it rides the `std`
+// feature; the default build has it.
+#[cfg(feature = "std")]
+pub mod autodiff_reverse;
 pub mod calculus;
 pub mod catalog;
 pub mod cga;
@@ -83,6 +87,8 @@ mod bytemuck_impls;
 
 pub use algebra::{Algebra, BladeStore};
 pub use autodiff::Dual;
+#[cfg(feature = "std")]
+pub use autodiff_reverse::{gradient, Var};
 pub use calculus::{
     differential, field_derivative, multivector_derivative, partials, vector_derivative,
 };
