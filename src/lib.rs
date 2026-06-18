@@ -152,6 +152,12 @@ pub use garust_core::{
     Vga3Sig, Vga3f,
 };
 
+// Reverse-mode AD (the `gradient` in one backward pass) rides the `std`
+// feature, since its tape is a heap `Vec` + a thread-local.
+#[cfg(feature = "std")]
+#[doc(inline)]
+pub use garust_core::{autodiff_reverse, gradient, Var};
+
 // --- The typed geometry layer --------------------------------------------
 #[doc(inline)]
 pub use garust_geo::{Conformal, Conformal3, Conformal3f, Motor, Motor3, Motor3f};
