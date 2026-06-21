@@ -110,6 +110,17 @@ cga_object!(
     /// through the point at infinity.
     Plane
 );
+cga_object!(
+    /// A **point pair** (a 0-sphere): the OPNS round `A ∧ B` of two points,
+    /// a grade-2 blade carrying exactly those two points.
+    PointPair
+);
+cga_object!(
+    /// A **circle**: the OPNS round `A ∧ B ∧ C` of three points, a grade-3
+    /// blade. The unique circle (or line, if the points are collinear)
+    /// through them.
+    Circle
+);
 
 impl<T: Scalar> Point<T> {
     /// The Euclidean point at `(x, y, z)`, lifted to its conformal null
@@ -178,9 +189,46 @@ impl<T: Scalar> Plane<T> {
     }
 }
 
+/// Every coefficient within `tol` of zero — the safe "vanishes" test in CGA's
+/// mixed `(4,1)` metric, where a nonzero blade can still have zero norm (so a
+/// scalar norm check would be unsound for incidence).
+fn is_negligible<T: Scalar>(m: &Cga<T>, tol: T::Magnitude) -> bool {
+    m.coeffs.as_slice().iter().all(|c| c.abs() <= tol)
+}
+
+impl<T: Scalar> PointPair<T> {
+    /// The point pair through `a` and `b` — the OPNS round `a ∧ b`.
+    pub fn through(a: &Point<T>, b: &Point<T>) -> Self {
+        Self {
+            mv: a.mv.wedge(&b.mv),
+        }
+    }
+
+    /// Whether `p` is one of the pair's two points — `p ∧ (a∧b) ≈ 0`.
+    pub fn contains(&self, p: &Point<T>, tol: T::Magnitude) -> bool {
+        is_negligible(&p.mv.wedge(&self.mv), tol)
+    }
+}
+
+impl<T: Scalar> Circle<T> {
+    /// The circle through `a`, `b`, `c` — the OPNS round `a ∧ b ∧ c` (a line
+    /// if the three points are collinear).
+    pub fn through(a: &Point<T>, b: &Point<T>, c: &Point<T>) -> Self {
+        Self {
+            mv: a.mv.wedge(&b.mv).wedge(&c.mv),
+        }
+    }
+
+    /// Whether `p` lies on the circle — `p ∧ (a∧b∧c) ≈ 0`, the CGA
+    /// concircularity test.
+    pub fn contains(&self, p: &Point<T>, tol: T::Magnitude) -> bool {
+        is_negligible(&p.mv.wedge(&self.mv), tol)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{Plane, Point, Sphere};
+    use super::{Circle, Plane, Point, PointPair, Sphere};
     use crate::Conformal;
     use garust_core::Cga3;
     use std::f64::consts::TAU;
@@ -283,5 +331,46 @@ mod tests {
         let t = Conformal::translator(0.0, 0.0, 3.0); // lift by 3 ⇒ z = 5
         let moved = plane.transform(&t).multivector().cleaned(1e-10);
         assert_eq!(moved.grade(1), moved); // still a plane
+    }
+
+    // --- Rounds ---------------------------------------------------------
+
+    #[test]
+    fn circle_contains_its_points_and_cocircular_ones() {
+        // The unit circle in the z = 0 plane.
+        let a = Point::new(1.0, 0.0, 0.0);
+        let b = Point::new(0.0, 1.0, 0.0);
+        let c = Point::new(-1.0, 0.0, 0.0);
+        let circle = Circle::through(&a, &b, &c);
+        // The three defining points lie on it,
+        assert!(circle.contains(&a, 1e-9));
+        assert!(circle.contains(&b, 1e-9));
+        assert!(circle.contains(&c, 1e-9));
+        // a fourth cocircular point does too (the concircularity test),
+        assert!(circle.contains(&Point::new(0.0, -1.0, 0.0), 1e-9));
+        // but a point off the circle does not.
+        assert!(!circle.contains(&Point::new(0.0, 0.0, 1.0), 1e-9));
+    }
+
+    #[test]
+    fn point_pair_carries_exactly_its_two_points() {
+        let a = Point::new(1.0, 2.0, 3.0);
+        let b = Point::new(-1.0, 0.0, 2.0);
+        let pp = PointPair::through(&a, &b);
+        assert!(pp.contains(&a, 1e-9));
+        assert!(pp.contains(&b, 1e-9));
+        assert!(!pp.contains(&Point::new(0.0, 0.0, 0.0), 1e-9));
+    }
+
+    #[test]
+    fn a_versor_carries_a_circle_and_its_incidence_along() {
+        // Transform a circle and a point on it by the same conformal versor;
+        // incidence is preserved (the sandwich is structure-preserving).
+        let a = Point::new(1.0, 0.0, 0.0);
+        let b = Point::new(0.0, 1.0, 0.0);
+        let c = Point::new(-1.0, 0.0, 0.0);
+        let circle = Circle::through(&a, &b, &c);
+        let v = Conformal::translator(2.0, -1.0, 0.5) * Conformal::dilator(1.5);
+        assert!(circle.transform(&v).contains(&a.transform(&v), 1e-7));
     }
 }
