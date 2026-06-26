@@ -90,7 +90,8 @@ pub use autodiff::Dual;
 #[cfg(feature = "std")]
 pub use autodiff_reverse::{gradient, Var};
 pub use calculus::{
-    differential, field_derivative, multivector_derivative, partials, vector_derivative,
+    differential, divergence, exterior_derivative, field_derivative, multivector_derivative,
+    partials, vector_derivative,
 };
 pub use catalog::{GradeSet, Op};
 pub use dynamics::{ExtendedPhase, Phase};
