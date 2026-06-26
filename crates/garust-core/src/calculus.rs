@@ -39,9 +39,26 @@
 //!   directions: the `∇` of vector calculus, packing divergence and curl
 //!   into one object (`∇F = ∇·F + ∇∧F`).
 //!
+//! ## Calculus on (flat) manifolds
+//!
+//! Splitting `∇` into its two halves gives the operators of differential-forms
+//! / geometric calculus, here on the flat manifold of the algebra's space:
+//!
+//! - [`exterior_derivative`] — `dF = ∇∧F`, the grade-raising half: the
+//!   gradient of a scalar, the curl of a vector, nilpotent (`d² = 0`).
+//! - [`divergence`] — `∇·F`, the grade-lowering half.
+//! - [`differential`] is the directional derivative `(a·∇)F`.
+//!
+//! These are forward-mode (so `no_std`-friendly). Curved manifolds — a
+//! covariant derivative with a connection, the shape/curvature operator
+//! (Hestenes–Sobczyk *vector manifolds*) — would build on these but need the
+//! manifold itself represented (a metric/embedding + tangent projection); that
+//! is a separate, larger effort, not provided here.
+//!
 //! **Cost:** one evaluation of `f` per seeded direction — `DIM` for the
-//! gradients and [`field_derivative`], `N` for [`vector_derivative`], and a
-//! single one for [`differential`]. **Degenerate metrics:** a *null* blade
+//! gradients and [`field_derivative`], `N` for [`vector_derivative`] /
+//! [`exterior_derivative`] / [`divergence`], and a single one for
+//! [`differential`]. **Degenerate metrics:** a *null* blade
 //! has `e_J · e_J = 0`, so its reciprocal does not exist; the
 //! reciprocal-frame operators drop those directions (set them to zero). In a
 //! non-degenerate algebra (e.g. spacetime `G(3,1,0)`) every blade squares to
@@ -235,10 +252,81 @@ where
     acc
 }
 
+/// The **exterior derivative** `dF = ∇∧F = Σ_k e^k ∧ (∂F/∂x_k)` — the
+/// grade-*raising* half of the [`vector_derivative`], i.e. the exterior
+/// derivative of differential-forms calculus written in geometric algebra.
+///
+/// On a scalar field it is the gradient `∇φ` (a 1-form/vector); on a vector
+/// field, the curl `∇∧V` (a bivector). It is **nilpotent** — `d(dF) = 0`
+/// (Poincaré) — so `∇∧(∇φ) = 0` (curl of a gradient vanishes) and
+/// `∇∧(∇∧A) = 0`. Together with [`divergence`], `∇F = ∇·F + ∇∧F`.
+///
+/// Forward-mode, so it is `no_std`-friendly. Null vectors contribute nothing;
+/// cost: `N` evaluations of `f`.
+pub fn exterior_derivative<A, T, F>(x: &Multivector<A, T>, f: F) -> Multivector<A, T>
+where
+    A: Algebra,
+    T: Real,
+    F: Fn(&Multivector<A, Dual<T>>) -> Multivector<A, Dual<T>>,
+{
+    let mut acc = Multivector::<A, T>::zero();
+    for j in 0..A::DIM {
+        if grade_of(j) != 1 {
+            continue;
+        }
+        let (_idx, sign) = blade_product(j, j, A::P, A::Q);
+        if sign == 0 {
+            continue; // null vector: no reciprocal
+        }
+        let column = differential(x, &Multivector::<A, T>::basis(j), &f);
+        let term = Multivector::<A, T>::basis(j).wedge(&column);
+        if sign > 0 {
+            acc += term;
+        } else {
+            acc -= term;
+        }
+    }
+    acc
+}
+
+/// The **divergence** `∇·F = Σ_k e^k · (∂F/∂x_k)` — the grade-*lowering* half
+/// of the [`vector_derivative`] (Hestenes inner product, so scalar field parts
+/// contribute nothing). On a vector field it is the classical scalar
+/// divergence. Together with [`exterior_derivative`], `∇F = ∇·F + ∇∧F`.
+///
+/// Forward-mode and `no_std`-friendly. Null vectors contribute nothing; cost:
+/// `N` evaluations of `f`.
+pub fn divergence<A, T, F>(x: &Multivector<A, T>, f: F) -> Multivector<A, T>
+where
+    A: Algebra,
+    T: Real,
+    F: Fn(&Multivector<A, Dual<T>>) -> Multivector<A, Dual<T>>,
+{
+    let mut acc = Multivector::<A, T>::zero();
+    for j in 0..A::DIM {
+        if grade_of(j) != 1 {
+            continue;
+        }
+        let (_idx, sign) = blade_product(j, j, A::P, A::Q);
+        if sign == 0 {
+            continue; // null vector: no reciprocal
+        }
+        let column = differential(x, &Multivector::<A, T>::basis(j), &f);
+        let term = Multivector::<A, T>::basis(j).inner(&column);
+        if sign > 0 {
+            acc += term;
+        } else {
+            acc -= term;
+        }
+    }
+    acc
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        differential, field_derivative, multivector_derivative, partials, vector_derivative,
+        differential, divergence, exterior_derivative, field_derivative, multivector_derivative,
+        partials, vector_derivative,
     };
     use crate::autodiff::Dual;
     use crate::{Multivector, Vga2Sig, Vga3, Vga3Sig};
@@ -356,5 +444,60 @@ mod tests {
         let mut expected = Vga3::zero();
         expected.coeffs[0b011] = 2.0; // pure curl: 2·e12, zero divergence
         assert_eq!(d, expected);
+    }
+
+    // --- Calculus on (flat) manifolds: ∇∧, ∇·, and the laws ----------------
+
+    #[test]
+    fn exterior_derivative_of_a_scalar_field_is_the_gradient() {
+        // φ(X) = ½(x₁² + x₂²) ⇒ ∇φ = x₁ e1 + x₂ e2.
+        let x = Vga3::basis(1) * 3.0 + Vga3::basis(2) * 4.0;
+        let phi = |m: &Multivector<Vga3Sig, Dual<f64>>| {
+            Multivector::<Vga3Sig, Dual<f64>>::scalar(
+                (m.coeffs[1] * m.coeffs[1] + m.coeffs[2] * m.coeffs[2]) * Dual::constant(0.5),
+            )
+        };
+        let grad = exterior_derivative(&x, phi);
+        assert_eq!(grad, Vga3::basis(1) * 3.0 + Vga3::basis(2) * 4.0);
+    }
+
+    #[test]
+    fn divergence_of_the_position_field_is_the_dimension() {
+        // ∇·X = n (= 3 in Vga3), and its curl is zero.
+        let x = Vga3::basis(1) * 0.3 + Vga3::basis(2) * 7.0;
+        let id = |m: &Multivector<Vga3Sig, Dual<f64>>| m.grade(1);
+        assert_eq!(divergence(&x, id), Vga3::scalar(3.0));
+        assert_eq!(exterior_derivative(&x, id), Vga3::zero()); // curl-free
+    }
+
+    #[test]
+    fn exterior_and_divergence_split_the_vector_derivative() {
+        // ∇F = ∇·F + ∇∧F for the rotation field x₁e2 − x₂e1.
+        let x = Vga3::basis(1) * 0.4 - Vga3::basis(2) * 1.1;
+        let f = |m: &Multivector<Vga3Sig, Dual<f64>>| {
+            let mut out = Multivector::<Vga3Sig, Dual<f64>>::zero();
+            out.coeffs[2] = m.coeffs[1];
+            out.coeffs[1] = -m.coeffs[2];
+            out
+        };
+        let full = vector_derivative(&x, f);
+        let parts = divergence(&x, f) + exterior_derivative(&x, f);
+        assert_eq!(full, parts);
+        // Pure rotation: zero divergence, curl 2·e12.
+        assert_eq!(divergence(&x, f), Vga3::zero());
+        assert_eq!(exterior_derivative(&x, f).coeffs[0b011], 2.0);
+    }
+
+    #[test]
+    fn exterior_derivative_of_a_gradient_field_vanishes() {
+        // A gradient field V = ∇(x₁x₂) = x₂e1 + x₁e2 is curl-free: d² = 0.
+        let x = Vga3::basis(1) * 2.0 + Vga3::basis(2) * -1.0;
+        let grad_field = |m: &Multivector<Vga3Sig, Dual<f64>>| {
+            let mut out = Multivector::<Vga3Sig, Dual<f64>>::zero();
+            out.coeffs[1] = m.coeffs[2]; // ∂φ/∂x₁ = x₂
+            out.coeffs[2] = m.coeffs[1]; // ∂φ/∂x₂ = x₁
+            out
+        };
+        assert_eq!(exterior_derivative(&x, grad_field), Vga3::zero());
     }
 }
