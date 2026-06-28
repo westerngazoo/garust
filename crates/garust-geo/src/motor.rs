@@ -117,6 +117,41 @@ impl<T: Scalar> Motor<T> {
         self.versor.norm_squared()
     }
 
+    /// Build a pure rotor from a **unit quaternion** `(w, x, y, z)`.
+    ///
+    /// Produces the same rotation as the standard quaternion formula
+    /// `v' = q·v·q̄`. The blade mapping accounts for the sign conventions
+    /// in garust's `Motor::rotor` / `exp(-θ/2·B)` convention:
+    ///
+    /// | quaternion | PGA coeff | index |
+    /// |------------|-----------|-------|
+    /// | `w`        | scalar    | 0     |
+    /// | `x`        | -e23      | 6     |
+    /// | `y`        | +e13      | 5     |
+    /// | `z`        | -e12      | 3     |
+    ///
+    /// The resulting motor is a **pure rotation** with no translation
+    /// component. Compose with [`Motor::translator`] to add a translation.
+    ///
+    /// # Precondition
+    ///
+    /// The input must be a unit quaternion (`w²+x²+y²+z² ≈ 1`).
+    /// No normalisation is performed internally.
+    ///
+    /// ```
+    /// use garust_geo::Motor;
+    /// let id = Motor::<f64>::from_unit_quaternion(1.0, 0.0, 0.0, 0.0);
+    /// assert_eq!(id, Motor::identity());
+    /// ```
+    pub fn from_unit_quaternion(w: T, x: T, y: T, z: T) -> Self {
+        let mut v = Pga::<T>::zero();
+        v.coeffs[0] = w;  // scalar
+        v.coeffs[6] = -x; // e23 (sign matches exp(-θ/2·e23) convention)
+        v.coeffs[5] = y;  // e13 (e13 plane is reversed relative to e23/e12)
+        v.coeffs[3] = -z; // e12 (sign matches exp(-θ/2·e12) convention)
+        Self { versor: v }
+    }
+
     /// The equivalent **column-major homogeneous 4×4 matrix** (`m[col][row]`),
     /// mapping a point `(x, y, z, 1)` to `Σ_c m[c] · [x, y, z, 1][c]` — the
     /// same Euclidean result as [`apply`](Motor::apply) on a point, as a plain
@@ -211,6 +246,38 @@ impl<T: Real> Motor<T> {
         Self { versor }
     }
 
+    /// `√(norm_squared())`. A unit motor (every rotor, translator, and their
+    /// composition) has `norm() ≈ 1.0`.
+    ///
+    /// ```
+    /// use garust_geo::Motor;
+    /// use garust_core::Pga3;
+    /// use std::f64::consts::TAU;
+    /// assert!((Motor::<f64>::identity().norm() - 1.0).abs() < 1e-12);
+    /// assert!((Motor::rotor(TAU / 3.0, Pga3::basis(0b0110)).norm() - 1.0).abs() < 1e-12);
+    /// ```
+    pub fn norm(&self) -> T {
+        self.versor.norm()
+    }
+
+    /// Return the unit motor geometrically nearest to `self`.
+    ///
+    /// Uses the first-order approximation `M / ‖M‖`, which is exact for
+    /// rotors and translators and a good approximation for general motors
+    /// that have drifted slightly from unit norm. For severely denormalised
+    /// motors, iterate.
+    ///
+    /// ```
+    /// use garust_geo::Motor;
+    /// let id = Motor::<f64>::identity().renormalize();
+    /// assert_eq!(id, Motor::identity());
+    /// ```
+    pub fn renormalize(&self) -> Self {
+        Self {
+            versor: self.versor.normalized(),
+        }
+    }
+
     /// The motor's logarithm: the **screw bivector** `B` (rotation plane +
     /// pitch translation, the motor's Lie-algebra coordinates) with
     /// `exp(B) = ±M`. Inverse of building a motor from
@@ -241,6 +308,67 @@ impl<T: Real> Motor<T> {
         Self {
             versor: (delta * t).exp() * self.versor,
         }
+    }
+}
+
+/// f64-specific methods that require concrete float operations.
+impl Motor<f64> {
+    /// Fréchet (Riemannian) mean of a non-empty slice of motors.
+    ///
+    /// Computes the Riemannian centroid via gradient descent on the motor
+    /// manifold: at each step, log each motor to the current estimate's
+    /// tangent space, average there, and retract back with exp. Converges
+    /// when the tangent-space residual norm drops below `tol`.
+    ///
+    /// `tol = 1e-8` and `max_iter = 20` suit typical calibration clusters.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `motors` is empty.
+    ///
+    /// ```
+    /// use garust_geo::Motor;
+    /// let m = Motor::translator(1.0, 0.0, 0.0);
+    /// let mean = Motor::frechet_mean(&[m], 1e-8, 20);
+    /// // Mean of one motor is that motor.
+    /// assert!((mean.geodesic_distance(&m)) < 1e-12);
+    /// ```
+    pub fn frechet_mean(motors: &[Self], tol: f64, max_iter: usize) -> Self {
+        assert!(!motors.is_empty(), "frechet_mean: motors must be non-empty");
+        let n = motors.len() as f64;
+        let mut mu = motors[0];
+        for _ in 0..max_iter {
+            // Mean tangent vector at μ.
+            let mut tangent = Pga::<f64>::zero();
+            for m in motors {
+                tangent += mu.inverse().compose(m).log();
+            }
+            tangent = tangent * (1.0 / n);
+            if tangent.norm() < tol {
+                break;
+            }
+            mu = Motor::from_versor(tangent.exp()) * mu;
+        }
+        mu
+    }
+
+    /// Geodesic (bi-invariant) distance between two motors on the motor
+    /// manifold.
+    ///
+    /// Defined as `‖log(self⁻¹ ∘ other)‖`. Returns `0` when `self` and
+    /// `other` represent the same motion, and satisfies symmetry and the
+    /// triangle inequality.
+    ///
+    /// Depends on [`Motor::norm`] and [`Motor::log`]; see also issue #33
+    /// and #36 in the garust tracker.
+    ///
+    /// ```
+    /// use garust_geo::Motor;
+    /// let m = Motor::translator(1.0, 2.0, 3.0);
+    /// assert!((m.geodesic_distance(&m)).abs() < 1e-12);
+    /// ```
+    pub fn geodesic_distance(&self, other: &Self) -> f64 {
+        self.inverse().compose(other).log().norm()
     }
 }
 
@@ -483,4 +611,158 @@ mod tests {
             approx_eq(&lerped.apply(&p).coeffs, &direct.apply(&p).coeffs, 1e-10);
         }
     }
+
+    // --- Issue #32: Motor::from_unit_quaternion ---
+
+    #[test]
+    fn from_unit_quaternion_identity() {
+        let id = Motor::<f64>::from_unit_quaternion(1.0, 0.0, 0.0, 0.0);
+        assert_eq!(id, Motor::identity());
+    }
+
+    #[test]
+    fn from_unit_quaternion_round_trip_via_matrix() {
+        // Four distinct unit quaternions and expected 3×3 rotation blocks.
+        // q = (cos θ/2, sin θ/2 · n̂) for rotations about each axis.
+        let half = TAU / 8.0; // θ = 90°  →  cos(π/4), sin(π/4)
+        let c = half.cos();
+        let s = half.sin();
+        let cases: &[(f64, f64, f64, f64, [f64; 3], [f64; 3])] = &[
+            // rotation about x-axis 90°: e_y → e_z
+            (c, s, 0.0, 0.0, [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]),
+            // rotation about y-axis 90°: e_z → e_x
+            (c, 0.0, s, 0.0, [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
+            // rotation about z-axis 90°: e_x → e_y
+            (c, 0.0, 0.0, s, [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+            // identity (redundant sanity)
+            (1.0, 0.0, 0.0, 0.0, [1.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+        ];
+        for &(w, x, y, z, inp, exp) in cases {
+            let m = Motor::<f64>::from_unit_quaternion(w, x, y, z);
+            let mat = m.to_matrix();
+            // Apply the matrix to inp.
+            let got = [
+                mat[0][0] * inp[0] + mat[1][0] * inp[1] + mat[2][0] * inp[2],
+                mat[0][1] * inp[0] + mat[1][1] * inp[1] + mat[2][1] * inp[2],
+                mat[0][2] * inp[0] + mat[1][2] * inp[1] + mat[2][2] * inp[2],
+            ];
+            approx_eq(&got, &exp, 1e-12);
+        }
+    }
+
+    // --- Issue #33: Motor::norm ---
+
+    #[test]
+    fn norm_of_identity_is_one() {
+        assert!((Motor::<f64>::identity().norm() - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn norm_of_any_rotor_is_one() {
+        for &theta in &[0.0, 0.5, 1.0, TAU / 4.0] {
+            let r = Motor::rotor(theta, Pga3::basis(0b0110));
+            assert!((r.norm() - 1.0).abs() < 1e-12, "theta={theta} norm={}", r.norm());
+        }
+    }
+
+    #[test]
+    fn norm_consistency_with_norm_squared() {
+        let m = Motor::translator(1.0, 2.0, 3.0) * Motor::rotor(0.7, Pga3::basis(0b0011));
+        let n = m.norm();
+        assert!((n * n - m.norm_squared()).abs() < 1e-12);
+    }
+
+    // --- Issue #35: Motor::renormalize ---
+
+    #[test]
+    fn renormalize_is_stable_fixed_point_for_identity() {
+        let id = Motor::<f64>::identity().renormalize();
+        assert_eq!(id, Motor::identity());
+    }
+
+    #[test]
+    fn renormalize_restores_unit_norm_after_drift() {
+        // Simulate drift by scaling the versor slightly.
+        let m = Motor::translator(1.0, -2.0, 0.5) * Motor::rotor(1.1, Pga3::basis(0b0110));
+        // Introduce artificial scale drift.
+        let drifted = Motor::from_versor(m.versor() * 1.05);
+        let fixed = drifted.renormalize();
+        assert!((fixed.norm_squared() - 1.0).abs() < 1e-12, "norm² = {}", fixed.norm_squared());
+    }
+
+    #[test]
+    fn renormalize_is_idempotent() {
+        let m = Motor::translator(0.5, 1.5, -1.0) * Motor::rotor(0.3, Pga3::basis(0b0101));
+        let drifted = Motor::from_versor(m.versor() * 1.03);
+        let once = drifted.renormalize();
+        let twice = once.renormalize();
+        approx_eq(&once.versor().coeffs, &twice.versor().coeffs, 1e-12);
+    }
+
+    // --- Issue #34: Motor::frechet_mean ---
+
+    #[test]
+    fn frechet_mean_of_single_motor_is_identity_distance() {
+        let m = Motor::translator(1.0, -1.0, 2.0);
+        let mean = Motor::frechet_mean(&[m], 1e-8, 20);
+        assert!(mean.geodesic_distance(&m) < 1e-8, "dist = {}", mean.geodesic_distance(&m));
+    }
+
+    #[test]
+    fn frechet_mean_of_two_motors_matches_slerp_midpoint() {
+        let a = Motor::identity();
+        let b = Motor::rotor(TAU / 4.0, Pga3::basis(0b0110));
+        let mean = Motor::frechet_mean(&[a, b], 1e-10, 30);
+        let mid = a.slerp(&b, 0.5);
+        let p = Pga3::point(0.0, 1.0, 0.0);
+        approx_eq(&mean.apply(&p).coeffs, &mid.apply(&p).coeffs, 1e-8);
+    }
+
+    #[test]
+    fn frechet_mean_in_one_parameter_subgroup() {
+        // N rotors all at multiples of a unit step; mean ≈ the centroid angle.
+        let angles = [0.1f64, 0.3, 0.5, 0.7, 0.9];
+        let plane = Pga3::basis(0b0110);
+        let motors: Vec<Motor<f64>> = angles.iter().map(|&a| Motor::rotor(a, plane)).collect();
+        let mean = Motor::frechet_mean(&motors, 1e-10, 30);
+        let avg_angle: f64 = angles.iter().sum::<f64>() / angles.len() as f64;
+        let expected = Motor::rotor(avg_angle, plane);
+        let p = Pga3::point(0.0, 1.0, 0.0);
+        approx_eq(&mean.apply(&p).coeffs, &expected.apply(&p).coeffs, 1e-8);
+    }
+
+    #[test]
+    #[should_panic(expected = "frechet_mean: motors must be non-empty")]
+    fn frechet_mean_panics_on_empty() {
+        Motor::frechet_mean(&[], 1e-8, 20);
+    }
+
+    // --- Issue #36: Motor::geodesic_distance ---
+
+    #[test]
+    fn geodesic_distance_self_is_zero() {
+        let m = Motor::translator(2.0, -1.0, 3.0) * Motor::rotor(0.6, Pga3::basis(0b0110));
+        assert!((m.geodesic_distance(&m)).abs() < 1e-12);
+    }
+
+    #[test]
+    fn geodesic_distance_is_symmetric() {
+        let a = Motor::translator(1.0, 0.0, 0.0) * Motor::rotor(0.4, Pga3::basis(0b0110));
+        let b = Motor::translator(0.0, 2.0, -1.0) * Motor::rotor(0.8, Pga3::basis(0b0011));
+        let da = a.geodesic_distance(&b);
+        let db = b.geodesic_distance(&a);
+        assert!((da - db).abs() < 1e-12, "a→b = {da}, b→a = {db}");
+    }
+
+    #[test]
+    fn geodesic_distance_triangle_inequality() {
+        let a = Motor::translator(1.0, 0.0, 0.0);
+        let b = Motor::rotor(0.5, Pga3::basis(0b0110));
+        let c = Motor::translator(0.0, 1.0, 0.0) * Motor::rotor(0.3, Pga3::basis(0b0011));
+        let ab = a.geodesic_distance(&b);
+        let bc = b.geodesic_distance(&c);
+        let ac = a.geodesic_distance(&c);
+        assert!(ac <= ab + bc + 1e-12, "triangle inequality: {ac} <= {ab} + {bc}");
+    }
 }
+
