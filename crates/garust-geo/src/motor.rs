@@ -193,7 +193,10 @@ impl Motor<f64> {
     /// # Panics
     /// Panics if `motors` is empty.
     pub fn frechet_mean(motors: &[Self], tol: f64, max_iter: usize) -> Self {
-        assert!(!motors.is_empty(), "frechet_mean: motors slice cannot be empty");
+        assert!(
+            !motors.is_empty(),
+            "frechet_mean: motors slice cannot be empty"
+        );
         let mut mu = motors[0];
         let n = motors.len() as f64;
         let n_inv = 1.0 / n;
@@ -201,7 +204,7 @@ impl Motor<f64> {
             let mut b_bar = Pga::<f64>::zero();
             let mu_inv = mu.inverse();
             for m in motors {
-                b_bar = b_bar + mu_inv.compose(m).log();
+                b_bar += mu_inv.compose(m).log();
             }
             b_bar = b_bar * n_inv;
             if b_bar.norm() < tol {
@@ -357,9 +360,21 @@ mod tests {
         // Motor::rotor(90 deg, e23) computes exp(-45 deg * e23) = cos(-45) + sin(-45)*e23 = s - s*e23.
         let cases = [
             (s, s, 0.0, 0.0, Motor::rotor(TAU / 4.0, Pga3::basis(0b0110))), // x-axis
-            (s, 0.0, s, 0.0, Motor::rotor(TAU / 4.0, -Pga3::basis(0b0101))), // y-axis
+            (
+                s,
+                0.0,
+                s,
+                0.0,
+                Motor::rotor(TAU / 4.0, -Pga3::basis(0b0101)),
+            ), // y-axis
             (s, 0.0, 0.0, s, Motor::rotor(TAU / 4.0, Pga3::basis(0b0011))), // z-axis
-            (-s, s, 0.0, 0.0, Motor::rotor(-TAU / 4.0, Pga3::basis(0b0110))), // -x-axis
+            (
+                -s,
+                s,
+                0.0,
+                0.0,
+                Motor::rotor(-TAU / 4.0, Pga3::basis(0b0110)),
+            ), // -x-axis
         ];
 
         for (w, x, y, z, expected_m) in cases {
@@ -502,7 +517,9 @@ mod tests {
         assert!((a.geodesic_distance(&b) - b.geodesic_distance(&a)).abs() < 1e-12);
 
         // Triangle inequality
-        assert!(a.geodesic_distance(&c) <= a.geodesic_distance(&b) + b.geodesic_distance(&c) + 1e-12);
+        assert!(
+            a.geodesic_distance(&c) <= a.geodesic_distance(&b) + b.geodesic_distance(&c) + 1e-12
+        );
 
         // Angle on principal range
         let theta = 0.5_f64;
@@ -535,7 +552,11 @@ mod tests {
 
         // idempotence
         let m_renorm_twice = m_renorm.renormalize();
-        approx_eq(&m_renorm.versor().coeffs, &m_renorm_twice.versor().coeffs, 1e-12);
+        approx_eq(
+            &m_renorm.versor().coeffs,
+            &m_renorm_twice.versor().coeffs,
+            1e-12,
+        );
     }
 
     #[test]
