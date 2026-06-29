@@ -164,6 +164,64 @@ impl Motor<f64> {
     }
 }
 
+impl Motor<f64> {
+    /// Build a pure rotor from a unit quaternion `(w, x, y, z)`.
+    ///
+    /// The quaternion must be unit-norm. The resulting motor has no
+    /// translation component — it is a pure rotation. Composition with
+    /// a `Motor::translator` gives a full rigid-body pose.
+    ///
+    /// Blade mapping for Cl(3,0,1) (garust convention):
+    ///   scalar ← w
+    ///   e23    ← -x
+    ///   e13    ← y
+    ///   e12    ← -z
+    pub fn from_unit_quaternion(w: f64, x: f64, y: f64, z: f64) -> Self {
+        let mut versor = Pga::<f64>::zero();
+        versor.coeffs[0] = w;
+        versor.coeffs[0b0110] = -x;
+        versor.coeffs[0b0101] = y;
+        versor.coeffs[0b0011] = -z;
+        Self { versor }
+    }
+
+    /// Fréchet (Riemannian) mean of a non-empty slice of motors.
+    ///
+    /// Iterates until the tangent-space residual norm drops below `tol`
+    /// or `max_iter` is reached. Typical values: tol=1e-8, max_iter=20.
+    ///
+    /// # Panics
+    /// Panics if `motors` is empty.
+    pub fn frechet_mean(motors: &[Self], tol: f64, max_iter: usize) -> Self {
+        assert!(!motors.is_empty(), "frechet_mean: motors slice cannot be empty");
+        let mut mu = motors[0];
+        let n = motors.len() as f64;
+        let n_inv = 1.0 / n;
+        for _ in 0..max_iter {
+            let mut b_bar = Pga::<f64>::zero();
+            let mu_inv = mu.inverse();
+            for m in motors {
+                b_bar = b_bar + mu_inv.compose(m).log();
+            }
+            b_bar = b_bar * n_inv;
+            if b_bar.norm() < tol {
+                break;
+            }
+            mu = mu.compose(&Self::from_versor(b_bar.exp()));
+        }
+        mu
+    }
+
+    /// Geodesic (bi-invariant) distance between two motors on the motor
+    /// manifold.
+    ///
+    /// Defined as `‖log(self⁻¹ ∘ other)‖`. Returns 0 when `self == other`
+    /// as motions, and is symmetric and satisfies the triangle inequality.
+    pub fn geodesic_distance(&self, other: &Self) -> f64 {
+        self.inverse().compose(other).log().norm()
+    }
+}
+
 impl<T: Real> Motor<T> {
     /// A pure translation by `(dx, dy, dz)`.
     ///
@@ -242,6 +300,23 @@ impl<T: Real> Motor<T> {
             versor: (delta * t).exp() * self.versor,
         }
     }
+
+    /// `norm_squared().sqrt()`. A unit motor has `norm() ≈ 1.0`.
+    pub fn norm(&self) -> T {
+        self.versor.norm()
+    }
+
+    /// Return a unit motor geometrically nearest to `self`.
+    ///
+    /// Uses the first-order approximation `M / √⟨M ~M⟩₀`, which is
+    /// exact for rotors and translators and a good approximation for
+    /// general motors close to unit norm. For severely denormalized
+    /// motors, iterate.
+    pub fn renormalize(&self) -> Self {
+        Self {
+            versor: self.versor.normalized(),
+        }
+    }
 }
 
 /// Composition of motions. `a * b` applies `b` first, then `a`.
@@ -262,6 +337,39 @@ mod tests {
         assert_eq!(a.len(), b.len());
         for (i, (&x, &y)) in a.iter().zip(b.iter()).enumerate() {
             assert!((x - y).abs() < tol, "index {i}: {x} vs {y}");
+        }
+    }
+
+    #[test]
+    fn from_unit_quaternion_identity() {
+        let m = Motor::from_unit_quaternion(1.0, 0.0, 0.0, 0.0);
+        assert_eq!(m, Motor::identity());
+    }
+
+    #[test]
+    fn from_unit_quaternion_round_trip() {
+        // Test rotations of 90 degrees (tau/4) about x, y, and z axes
+        // The issue notes garust exp sign convention mapping.
+        // Motor::rotor(theta, plane) creates exp(-theta/2 * plane)
+        let s = std::f64::consts::FRAC_1_SQRT_2;
+        // In quat (w, x, y, z), a 90 deg rotation around x is w=cos(45)=s, x=sin(45)=s.
+        // from_unit_quaternion(s, s, 0, 0) maps to versor = s - s*e23.
+        // Motor::rotor(90 deg, e23) computes exp(-45 deg * e23) = cos(-45) + sin(-45)*e23 = s - s*e23.
+        let cases = [
+            (s, s, 0.0, 0.0, Motor::rotor(TAU / 4.0, Pga3::basis(0b0110))), // x-axis
+            (s, 0.0, s, 0.0, Motor::rotor(TAU / 4.0, -Pga3::basis(0b0101))), // y-axis
+            (s, 0.0, 0.0, s, Motor::rotor(TAU / 4.0, Pga3::basis(0b0011))), // z-axis
+            (-s, s, 0.0, 0.0, Motor::rotor(-TAU / 4.0, Pga3::basis(0b0110))), // -x-axis
+        ];
+
+        for (w, x, y, z, expected_m) in cases {
+            let m = Motor::from_unit_quaternion(w, x, y, z);
+            // compare their matrices to ensure they are the same rigid motion
+            let m_mat = m.to_matrix();
+            let exp_mat = expected_m.to_matrix();
+            for c in 0..4 {
+                approx_eq(&m_mat[c], &exp_mat[c], 1e-12);
+            }
         }
     }
 
@@ -329,6 +437,105 @@ mod tests {
     fn motors_are_unit_norm() {
         let m = Motor::translator(5.0, -2.0, 0.5) * Motor::rotor(1.23, Pga3::basis(0b0101));
         assert!((m.norm_squared() - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn norm_of_identity_and_rotor() {
+        assert!((Motor::<f64>::identity().norm() - 1.0).abs() < 1e-12);
+        let m = Motor::rotor(1.23, Pga3::basis(0b0101));
+        assert!((m.norm() - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn norm_squared_consistency() {
+        let m = Motor::translator(5.0, -2.0, 0.5) * Motor::rotor(1.23, Pga3::basis(0b0101));
+        let log_m = m.log();
+        assert!((log_m.norm().powi(2) - log_m.norm_squared()).abs() < 1e-12);
+    }
+
+    #[test]
+    fn frechet_mean_single() {
+        let m = Motor::translator(1.0, 2.0, 3.0) * Motor::rotor(0.5, Pga3::basis(0b0110));
+        let mean = Motor::frechet_mean(&[m], 1e-8, 20);
+        approx_eq(&mean.versor().coeffs, &m.versor().coeffs, 1e-12);
+    }
+
+    #[test]
+    fn frechet_mean_two_motors() {
+        let m1 = Motor::translator(1.0, 0.0, 0.0);
+        let m2 = Motor::translator(0.0, 2.0, 0.0) * Motor::rotor(0.8, Pga3::basis(0b0110));
+        let mean = Motor::frechet_mean(&[m1, m2], 1e-8, 20);
+        let slerp = m1.slerp(&m2, 0.5);
+
+        let p = Pga3::point(1.0, 1.0, 1.0);
+        approx_eq(&mean.apply(&p).coeffs, &slerp.apply(&p).coeffs, 1e-8);
+    }
+
+    #[test]
+    fn frechet_mean_subgroup() {
+        // N rotors in the same subgroup
+        let plane = Pga3::basis(0b0110);
+        let m1 = Motor::rotor(0.1, plane);
+        let m2 = Motor::rotor(0.5, plane);
+        let m3 = Motor::rotor(0.9, plane);
+        let mean = Motor::frechet_mean(&[m1, m2, m3], 1e-8, 20);
+        let expected = Motor::rotor((0.1 + 0.5 + 0.9) / 3.0, plane);
+        approx_eq(&mean.versor().coeffs, &expected.versor().coeffs, 1e-8);
+    }
+
+    #[test]
+    #[should_panic(expected = "motors slice cannot be empty")]
+    fn frechet_mean_panics_on_empty() {
+        let _: Motor<f64> = Motor::frechet_mean(&[], 1e-8, 20);
+    }
+
+    #[test]
+    fn geodesic_distance_properties() {
+        let a = Motor::translator(1.0, -2.0, 0.5) * Motor::rotor(0.9, Pga3::basis(0b0110));
+        let b = Motor::translator(0.0, 1.0, -1.0) * Motor::rotor(1.2, Pga3::basis(0b1010));
+        let c = Motor::translator(-1.0, 0.0, 2.0) * Motor::rotor(0.4, Pga3::basis(0b0011));
+
+        // Self-distance is 0
+        assert!(a.geodesic_distance(&a).abs() < 1e-12);
+
+        // Symmetric
+        assert!((a.geodesic_distance(&b) - b.geodesic_distance(&a)).abs() < 1e-12);
+
+        // Triangle inequality
+        assert!(a.geodesic_distance(&c) <= a.geodesic_distance(&b) + b.geodesic_distance(&c) + 1e-12);
+
+        // Angle on principal range
+        let theta = 0.5_f64;
+        let plane = Pga3::basis(0b0110);
+        let r = Motor::rotor(theta, plane);
+        let id = Motor::identity();
+        // Since rotor(theta, plane) builds exp(-theta/2 * plane),
+        // the log is -theta/2 * plane. The norm is theta/2.
+        assert!((id.geodesic_distance(&r) - theta / 2.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn renormalize_fixed_point_and_drift() {
+        let id = Motor::<f64>::identity();
+        assert_eq!(id.renormalize(), id);
+
+        let mut m = id;
+        for _ in 0..1000 {
+            // slightly non-unit rotor to simulate drift
+            let r = Motor::rotor(0.1, Pga3::basis(0b0110));
+            // add some small error to versor
+            let mut v = r.versor();
+            v.coeffs[0] += 1e-6;
+            let m_drift = Motor::from_versor(v);
+            m = m * m_drift;
+        }
+
+        let m_renorm = m.renormalize();
+        assert!((m_renorm.norm_squared() - 1.0).abs() < 1e-12);
+
+        // idempotence
+        let m_renorm_twice = m_renorm.renormalize();
+        approx_eq(&m_renorm.versor().coeffs, &m_renorm_twice.versor().coeffs, 1e-12);
     }
 
     #[test]
