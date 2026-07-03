@@ -88,11 +88,11 @@ impl<T: Scalar> Multivector<Cga3Sig, T> {
     /// grade-1 vector:
     ///
     /// ```text
-    /// π = a·e1 + b·e2 + c·e3 + d·n∞
+    /// flat = a·e1 + b·e2 + c·e3 + d·n∞
     /// ```
     ///
     /// A plane is a sphere through the point at infinity — same grade as
-    /// [`Multivector::sphere`], with `P · π == 0` the on-plane test.
+    /// [`Multivector::sphere`], with `P · flat == 0` the on-plane test.
     pub fn cga_plane(a: T, b: T, c: T, d: T) -> Self {
         let e1 = Self::basis(1);
         let e2 = Self::basis(2);

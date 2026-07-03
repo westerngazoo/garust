@@ -339,9 +339,10 @@ impl Motor<f64> {
         let mut mu = motors[0];
         for _ in 0..max_iter {
             // Mean tangent vector at μ.
+            let mu_inv = mu.inverse();
             let mut tangent = Pga::<f64>::zero();
             for m in motors {
-                tangent += mu.inverse().compose(m).log();
+                tangent += mu_inv.compose(m).log();
             }
             tangent = tangent * (1.0 / n);
             if tangent.norm() < tol {
@@ -624,7 +625,7 @@ mod tests {
     fn from_unit_quaternion_round_trip_via_matrix() {
         // Four distinct unit quaternions and expected 3×3 rotation blocks.
         // q = (cos θ/2, sin θ/2 · n̂) for rotations about each axis.
-        let half = TAU / 8.0; // θ = 90°  →  cos(π/4), sin(π/4)
+        let half = TAU / 8.0; // θ = 90°  →  cos(τ/8), sin(τ/8)
         let c = half.cos();
         let s = half.sin();
         let cases: &[(f64, f64, f64, f64, [f64; 3], [f64; 3])] = &[

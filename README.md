@@ -58,11 +58,11 @@ assert_eq!(a.norm_squared(), 2.0);
 
 ```rust
 use garust::Vga3;
-use std::f64::consts::FRAC_PI_2;
+use std::f64::consts::TAU;
 
 // A unit rotor for 90° in the e23 plane (i.e. about the x-axis):
 //   R = exp(−θ/2 · e23)
-let r = (Vga3::basis(0b110) * (-FRAC_PI_2 / 2.0)).exp();
+let r = (Vga3::basis(0b110) * (-TAU / 8.0)).exp();
 
 // Apply it with the sandwich product R x ~R: it sends e2 → e3.
 let rotated = r.sandwich(&Vga3::basis(2)).cleaned(1e-10);
@@ -88,10 +88,10 @@ let line = Pga3::point(0.0, 0.0, 0.0).line_through(&Pga3::point(1.0, 0.0, 0.0));
 
 ```rust
 use garust::{Motor3, Pga3};
-use std::f64::consts::FRAC_PI_2;
+use std::f64::consts::TAU;
 
 // Rotate 90° about the x-axis, then translate +3 along x.
-let r = Motor3::rotor(FRAC_PI_2, Pga3::basis(0b0110)); // e23 plane
+let r = Motor3::rotor(TAU / 4.0, Pga3::basis(0b0110)); // e23 plane
 let t = Motor3::translator(3.0, 0.0, 0.0);
 let m = t * r;                       // compose: `*` applies r first
 
