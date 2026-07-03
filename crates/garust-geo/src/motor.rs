@@ -145,9 +145,9 @@ impl<T: Scalar> Motor<T> {
     /// ```
     pub fn from_unit_quaternion(w: T, x: T, y: T, z: T) -> Self {
         let mut v = Pga::<T>::zero();
-        v.coeffs[0] = w;  // scalar
+        v.coeffs[0] = w; // scalar
         v.coeffs[6] = -x; // e23 (sign matches exp(-θ/2·e23) convention)
-        v.coeffs[5] = y;  // e13 (e13 plane is reversed relative to e23/e12)
+        v.coeffs[5] = y; // e13 (e13 plane is reversed relative to e23/e12)
         v.coeffs[3] = -z; // e12 (sign matches exp(-θ/2·e12) convention)
         Self { versor: v }
     }
@@ -661,7 +661,11 @@ mod tests {
     fn norm_of_any_rotor_is_one() {
         for &theta in &[0.0, 0.5, 1.0, TAU / 4.0] {
             let r = Motor::rotor(theta, Pga3::basis(0b0110));
-            assert!((r.norm() - 1.0).abs() < 1e-12, "theta={theta} norm={}", r.norm());
+            assert!(
+                (r.norm() - 1.0).abs() < 1e-12,
+                "theta={theta} norm={}",
+                r.norm()
+            );
         }
     }
 
@@ -687,7 +691,11 @@ mod tests {
         // Introduce artificial scale drift.
         let drifted = Motor::from_versor(m.versor() * 1.05);
         let fixed = drifted.renormalize();
-        assert!((fixed.norm_squared() - 1.0).abs() < 1e-12, "norm² = {}", fixed.norm_squared());
+        assert!(
+            (fixed.norm_squared() - 1.0).abs() < 1e-12,
+            "norm² = {}",
+            fixed.norm_squared()
+        );
     }
 
     #[test]
@@ -705,7 +713,11 @@ mod tests {
     fn frechet_mean_of_single_motor_is_identity_distance() {
         let m = Motor::translator(1.0, -1.0, 2.0);
         let mean = Motor::frechet_mean(&[m], 1e-8, 20);
-        assert!(mean.geodesic_distance(&m) < 1e-8, "dist = {}", mean.geodesic_distance(&m));
+        assert!(
+            mean.geodesic_distance(&m) < 1e-8,
+            "dist = {}",
+            mean.geodesic_distance(&m)
+        );
     }
 
     #[test]
@@ -762,7 +774,9 @@ mod tests {
         let ab = a.geodesic_distance(&b);
         let bc = b.geodesic_distance(&c);
         let ac = a.geodesic_distance(&c);
-        assert!(ac <= ab + bc + 1e-12, "triangle inequality: {ac} <= {ab} + {bc}");
+        assert!(
+            ac <= ab + bc + 1e-12,
+            "triangle inequality: {ac} <= {ab} + {bc}"
+        );
     }
 }
-
