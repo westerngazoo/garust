@@ -366,6 +366,9 @@ mod tests {
     use garust_core::Pga3;
     use std::f64::consts::TAU;
 
+    /// A `from_unit_quaternion` test case: `(w, x, y, z, input, expected)`.
+    type QuatCase = (f64, f64, f64, f64, [f64; 3], [f64; 3]);
+
     fn approx_eq(a: &[f64], b: &[f64], tol: f64) {
         assert_eq!(a.len(), b.len());
         for (i, (&x, &y)) in a.iter().zip(b.iter()).enumerate() {
@@ -751,7 +754,7 @@ mod tests {
         let half = TAU / 8.0; // θ = 90°  →  cos(π/4), sin(π/4)
         let c = half.cos();
         let s = half.sin();
-        let cases: &[(f64, f64, f64, f64, [f64; 3], [f64; 3])] = &[
+        let cases: &[QuatCase] = &[
             // rotation about x-axis 90°: e_y → e_z
             (c, s, 0.0, 0.0, [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]),
             // rotation about y-axis 90°: e_z → e_x
