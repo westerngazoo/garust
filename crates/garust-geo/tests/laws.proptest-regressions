@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc dc2b5293f9583d290cd5627d058a785b5125dc710b97d1336a8bfdf2217dfea0 # shrinks to m = Motor { versor: Multivector { coeffs: [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.25455116856885196, 0.0, 0.0, 0.0] } }, x = 0.0, y = 0.0, z = 0.0
