@@ -197,6 +197,97 @@ impl Motor<f64> {
     pub fn apply_each_simd(&self, xs: &mut [Pga<f64>]) {
         crate::simd::sandwich_each_pga(&self.versor, xs);
     }
+
+    /// Fast single-point sandwich kernel, klein-style.
+    ///
+    /// Computes `M · p · M̃` analytically — no 16×16 Cayley table traversal.
+    /// Exploits the fact that the motor has 8 non-zero coefficients and a point
+    /// has 4, reducing the double-product to closed-form rotation + translation
+    /// formulas followed by a single `f64x4` matrix-column FMA step.
+    ///
+    /// **Precondition**: `self` must be a unit motor (`norm() ≈ 1`).
+    ///
+    /// The result is identical to
+    /// ```ignore
+    /// let p = Pga3::point(pt[0], pt[1], pt[2]);
+    /// let [x, y, z] = Motor::apply_then_extract_xyz(&m, p);
+    /// ```
+    /// but bypasses the general table-driven path.
+    ///
+    /// # Motor coefficient layout (non-zero even-grade blades)
+    ///
+    /// | blade  | index | symbol |
+    /// |--------|-------|--------|
+    /// | scalar | 0     | a      |
+    /// | e12    | 3     | b      |
+    /// | e13    | 5     | c      |
+    /// | e23    | 6     | d      |
+    /// | e01    | 9     | e      |
+    /// | e02    | 10    | f      |
+    /// | e03    | 12    | g      |
+    /// | e0123  | 15    | h      |
+    pub fn apply_point_fast(&self, pt: [f64; 3]) -> [f64; 3] {
+        use wide::f64x4;
+        let v = &self.versor.coeffs;
+        let (a, b, c, d) = (v[0], v[3], v[5], v[6]);
+        let (e, f, g, h) = (v[9], v[10], v[12], v[15]);
+        let (px, py, pz) = (pt[0], pt[1], pt[2]);
+
+        // Quadratic terms of the rotor part.
+        let (aa, bb, cc, dd) = (a * a, b * b, c * c, d * d);
+        let (ab, ac, ad) = (a * b, a * c, a * d);
+        let (bc, bd, cd) = (b * c, b * d, c * d);
+
+        // Cross-terms with the dual (translation) part.
+        let (ae, bf, cg, dh) = (a * e, b * f, c * g, d * h);
+        let (be, af, dg, ch) = (b * e, a * f, d * g, c * h);
+        let (ce, df, ga, bh) = (c * e, d * f, g * a, b * h);
+
+        // Rotation matrix (unit-quaternion formula with q=(a,-d,c,-b)).
+        let r00 = aa - bb - cc + dd;
+        let r01 = 2.0 * (ab - cd);
+        let r02 = 2.0 * (ac + bd);
+        let r10 = -2.0 * (ab + cd);
+        let r11 = aa - bb + cc - dd;
+        let r12 = 2.0 * (ad - bc);
+        let r20 = 2.0 * (bd - ac);
+        let r21 = -2.0 * (ad + bc);
+        let r22 = aa + bb - cc - dd;
+
+        // Translation vector extracted from the dual bivector components.
+        // Derived from t = 2·q_d·q̄_r using the motor ↔ dual-quaternion map,
+        // where q_r = (a,-d,c,-b) and q_d = (h,e,f,g) for blade-indexed
+        // motor coeffs (e01→e, e02→f, e03→g, e0123→h).
+        let tx = 2.0 * (ae + bf + cg + dh);
+        let ty = 2.0 * (af - be + dg - ch);
+        let tz = 2.0 * (ga + bh - ce - df);
+
+        // Matrix-column FMA: result = col0*px + col1*py + col2*pz + col3.
+        // Packs (x', y', z', w'=1) into one f64x4 with no horizontal adds.
+        let col0 = f64x4::from([r00, r10, r20, 0.0]);
+        let col1 = f64x4::from([r01, r11, r21, 0.0]);
+        let col2 = f64x4::from([r02, r12, r22, 0.0]);
+        let col3 = f64x4::from([tx, ty, tz, 1.0]);
+
+        let result = col0 * f64x4::splat(px)
+            + col1 * f64x4::splat(py)
+            + col2 * f64x4::splat(pz)
+            + col3;
+
+        let arr = result.to_array();
+        [arr[0], arr[1], arr[2]]
+    }
+}
+
+#[cfg(feature = "simd")]
+impl Motor<f32> {
+    /// SIMD batch apply: transform every PGA object in `xs` in place, eight
+    /// objects per `f32x8` vector (structure-of-arrays). Behind the `simd`
+    /// feature; bit-faithful to [`Motor::apply_each`] (tail uses scalar path),
+    /// with ~2× the throughput of the `f64` path on 256-bit SIMD hardware.
+    pub fn apply_each_simd(&self, xs: &mut [Pga<f32>]) {
+        crate::simd::sandwich_each_pga_f32(&self.versor, xs);
+    }
 }
 
 impl Motor<f64> {
@@ -462,6 +553,7 @@ mod tests {
         let moved = t.apply(&Pga3::point(0.0, 0.0, 0.0)).cleaned(1e-10);
         approx_eq(&moved.coeffs, &Pga3::point(3.0, -1.0, 2.0).coeffs, 1e-12);
     }
+
 
     #[test]
     fn rotor_about_x_axis_sends_y_to_z() {

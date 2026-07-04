@@ -138,4 +138,18 @@ proptest! {
     fn conformal_is_unit_norm(c in any_conformal()) {
         prop_assert!((c.norm_squared() - 1.0).abs() < 1e-9);
     }
+
+    // apply_point_fast must equal Motor::apply on a PGA point within 1e-10.
+    #[test]
+    #[cfg(feature = "simd")]
+    fn apply_point_fast_equals_apply(
+        m in any_motor(), x in coord(), y in coord(), z in coord(),
+    ) {
+        let (ex, ey, ez) = pga::Point::new(x, y, z).transform(&m).to_euclidean();
+        let [fx, fy, fz] = m.apply_point_fast([x, y, z]);
+        prop_assert!(
+            (fx - ex).abs() < 1e-10 && (fy - ey).abs() < 1e-10 && (fz - ez).abs() < 1e-10,
+            "fast=({fx},{fy},{fz}) vs apply=({ex},{ey},{ez})"
+        );
+    }
 }
