@@ -49,7 +49,7 @@
 pub mod contact;
 pub mod world;
 
-pub use world::{Body, World};
+pub use world::{Body, Joint, World, STATIC};
 
 use garust_core::Pga3;
 use garust_geo::Motor;

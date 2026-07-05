@@ -163,12 +163,13 @@ mod bytemuck_tests {
 
 // The SoA SIMD batch transforms must match the scalar batch (the slow,
 // obviously-correct path) within floating-point tolerance — a non-multiple-
-// of-4 batch also exercises the scalar tail.
+// of-4/8 batch also exercises the scalar tail.
 #[cfg(all(test, feature = "simd"))]
 mod simd_tests {
     use crate::{Conformal, Motor};
-    use garust_core::{Cga3, Pga3};
+    use garust_core::{Cga3, Cga3f, Pga3, Pga3f};
     use std::f64::consts::TAU;
+    use std::f32::consts::TAU as TAU_F32;
 
     #[test]
     fn motor_apply_each_simd_matches_scalar() {
@@ -208,6 +209,57 @@ mod simd_tests {
         for (a, b) in simd.iter().zip(scalar.iter()) {
             for k in 0..32 {
                 assert!((a.coeffs[k] - b.coeffs[k]).abs() < 1e-12, "coeff {k}");
+            }
+        }
+    }
+
+    // ── f32 paths (8-lane) ──────────────────────────────────────────────────
+
+    #[test]
+    fn motor_f32_apply_each_simd_matches_scalar() {
+        // 17 points: two full f32x8 chunks of 8 plus a tail of 1.
+        let m: Motor<f32> = Motor::translator(1.0, -2.0, 0.5)
+            * Motor::rotor(TAU_F32 / 8.0, Pga3f::basis(0b0110));
+        let pts: Vec<Pga3f> = (0..17)
+            .map(|i| Pga3f::point(i as f32, (i % 3) as f32 - 1.0, -(i as f32) * 0.5))
+            .collect();
+        let mut simd = pts.clone();
+        let mut scalar = pts;
+        m.apply_each_simd(&mut simd);
+        m.apply_each(&mut scalar);
+        for (a, b) in simd.iter().zip(scalar.iter()) {
+            for k in 0..16 {
+                assert!(
+                    (a.coeffs[k] - b.coeffs[k]).abs() < 1e-5,
+                    "coeff {k}: {} vs {}",
+                    a.coeffs[k],
+                    b.coeffs[k]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn conformal_f32_apply_each_simd_matches_scalar() {
+        // 17 points: two full f32x8 chunks of 8 plus a tail of 1.
+        let v: Conformal<f32> = Conformal::translator(1.0, 0.0, -2.0)
+            * Conformal::rotor(TAU_F32 / 8.0, Cga3f::basis(0b0110))
+            * Conformal::dilator(1.5);
+        let pts: Vec<Cga3f> = (0..17)
+            .map(|i| Cga3f::cga_point(i as f32 * 0.3, (i % 4) as f32, 1.0 - i as f32))
+            .collect();
+        let mut simd = pts.clone();
+        let mut scalar = pts;
+        v.apply_each_simd(&mut simd);
+        v.apply_each(&mut scalar);
+        for (a, b) in simd.iter().zip(scalar.iter()) {
+            for k in 0..32 {
+                assert!(
+                    (a.coeffs[k] - b.coeffs[k]).abs() < 1e-5,
+                    "coeff {k}: {} vs {}",
+                    a.coeffs[k],
+                    b.coeffs[k]
+                );
             }
         }
     }

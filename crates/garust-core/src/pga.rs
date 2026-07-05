@@ -74,6 +74,56 @@ impl<T: Scalar> Multivector<Pga3Sig, T> {
         self.regressive(other)
     }
 
+    /// A body-frame **twist** bivector `B = ω + v`.
+    ///
+    /// Encodes the instantaneous rigid-body velocity as a single grade-2
+    /// element — the natural PGA form of the body Lie algebra element:
+    ///
+    /// - Angular part `ω = wx·e23 + wy·e31 + wz·e12` (Euclidean bivectors,
+    ///   one per rotation axis).
+    /// - Translational part `v = vx·e01 + vy·e02 + vz·e03` (ideal bivectors,
+    ///   one per translation direction).
+    ///
+    /// The equations of motion are `Ṁ = -½·M·B` (kinematics) and
+    /// `Ṗ = W + P.commutator(B)` (dynamics), where `P = 𝓘(B)` is momentum
+    /// and `W` a wrench. See also [`Multivector::wrench`] and
+    /// [`Multivector::commutator`].
+    pub fn twist(vx: T, vy: T, vz: T, wx: T, wy: T, wz: T) -> Self {
+        let e0 = Self::basis(8);
+        let e1 = Self::basis(1);
+        let e2 = Self::basis(2);
+        let e3 = Self::basis(4);
+        (e2 * e3) * wx
+            + (e3 * e1) * wy
+            + (e1 * e2) * wz
+            + (e0 * e1) * vx
+            + (e0 * e2) * vy
+            + (e0 * e3) * vz
+    }
+
+    /// A **wrench** bivector `W = τ + f`.
+    ///
+    /// The PGA dual of a twist: packages torque and force into one grade-2
+    /// element for feeding into the equations of motion (`Ṗ = W + P×B`):
+    ///
+    /// - Torque part `τ = tx·e23 + ty·e31 + tz·e12` (Euclidean bivectors).
+    /// - Force part `f = fx·e01 + fy·e02 + fz·e03` (ideal bivectors).
+    ///
+    /// A wrench applied at the centre of mass produces no angular impulse;
+    /// for an off-centre force, add the lever-arm cross-product as torque.
+    pub fn wrench(fx: T, fy: T, fz: T, tx: T, ty: T, tz: T) -> Self {
+        let e0 = Self::basis(8);
+        let e1 = Self::basis(1);
+        let e2 = Self::basis(2);
+        let e3 = Self::basis(4);
+        (e2 * e3) * tx
+            + (e3 * e1) * ty
+            + (e1 * e2) * tz
+            + (e0 * e1) * fx
+            + (e0 * e2) * fy
+            + (e0 * e3) * fz
+    }
+
     /// A PGA-aware [`fmt::Display`] view that prints the null generator
     /// as `e0`, written *first* in each blade, matching the PGA
     /// literature.
@@ -289,5 +339,49 @@ mod tests {
     #[test]
     fn display_shows_the_scalar_term() {
         assert_eq!(Pga3::one().display_pga().to_string(), "1");
+    }
+
+    // --- Twist and wrench ------------------------------------------------
+
+    #[test]
+    fn twist_is_pure_grade_2() {
+        let b = Pga3::twist(1.0, 2.0, 3.0, 4.0, 5.0, 6.0);
+        assert_eq!(b.grade(2).coeffs, b.coeffs);
+    }
+
+    #[test]
+    fn wrench_is_pure_grade_2() {
+        let w = Pga3::wrench(1.0, 2.0, 3.0, 4.0, 5.0, 6.0);
+        assert_eq!(w.grade(2).coeffs, w.coeffs);
+    }
+
+    #[test]
+    fn twist_zero_angular_has_only_ideal_blades() {
+        // No angular part → only e01, e02, e03 are nonzero.
+        let b = Pga3::twist(1.0, 2.0, 3.0, 0.0, 0.0, 0.0);
+        // Euclidean bivectors e23=6, e13=5, e12=3 must be zero.
+        assert_eq!(b.coeffs[0b0110], 0.0);
+        assert_eq!(b.coeffs[0b0101], 0.0);
+        assert_eq!(b.coeffs[0b0011], 0.0);
+    }
+
+    #[test]
+    fn twist_zero_velocity_has_only_euclidean_blades() {
+        // No translational part → only e23, e31, e12 are nonzero.
+        let b = Pga3::twist(0.0, 0.0, 0.0, 1.0, 2.0, 3.0);
+        // Ideal bivectors e01=9, e02=10, e03=12 must be zero.
+        assert_eq!(b.coeffs[9], 0.0);
+        assert_eq!(b.coeffs[10], 0.0);
+        assert_eq!(b.coeffs[12], 0.0);
+    }
+
+    #[test]
+    fn twist_and_wrench_share_blade_layout() {
+        // Same (vx,vy,vz,wx,wy,wz) in twist and (fx,fy,fz,tx,ty,tz) in wrench
+        // should produce identical coefficient arrays when corresponding
+        // arguments are equal.
+        let b = Pga3::twist(1.0, 2.0, 3.0, 4.0, 5.0, 6.0);
+        let w = Pga3::wrench(1.0, 2.0, 3.0, 4.0, 5.0, 6.0);
+        assert_eq!(b.coeffs, w.coeffs);
     }
 }

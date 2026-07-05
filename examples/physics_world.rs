@@ -45,7 +45,7 @@ fn bouncing_balls() {
     let dt = 1.0 / 120.0;
     println!("  t (s)   ball0.y   ball1.y");
     for frame in 0..=720 {
-        world.step(&mut balls, dt);
+        world.step(&mut balls, &[], dt);
         if frame % 120 == 0 {
             println!(
                 "  {:4.1}    {:6.3}    {:6.3}",
