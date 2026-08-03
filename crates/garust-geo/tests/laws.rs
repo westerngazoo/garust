@@ -29,8 +29,12 @@ fn xyz_close(got: (f64, f64, f64), want: (f64, f64, f64)) -> bool {
 
 /// One of the three Euclidean basis bivectors of PGA — a valid rotation
 /// plane (it squares to −1): `e1e2`, `e1e3`, `e2e3`.
+///
+/// The null generator `e0` sits at **bit 3**, so any mask with that bit set
+/// (`0b1001`, `0b1010`, `0b1100`) is an *ideal* bivector squaring to 0 —
+/// feeding one to `Motor::rotor` yields a translator, not a rotation.
 fn pga_axis(choice: usize) -> Pga3 {
-    Pga3::basis([0b0110, 0b1010, 0b1100][choice % 3])
+    Pga3::basis([0b0011, 0b0101, 0b0110][choice % 3])
 }
 
 /// One of the three Euclidean basis bivectors of CGA — `e1e2`, `e1e3`,
