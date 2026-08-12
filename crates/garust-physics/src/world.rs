@@ -184,10 +184,12 @@ pub const STATIC: usize = usize::MAX;
 /// All variants store body indices into the caller's `&mut [Body]` slice.
 /// Use [`STATIC`] as the first index to pin to a world-frame fixture.
 ///
-/// The v1 solver enforces the **positional** (ball-in-socket) part of each
-/// joint via sequential impulse. The `axis` field on `Hinge` records the
-/// hinge direction for future rotational-limit work; it is stored but not
-/// yet enforced.
+/// The v1 solver enforces the **positional** part of each joint via
+/// sequential impulse: ball-in-socket for `Hinge`/`Fixed`, and the two
+/// perpendicular-to-axis directions for `Prismatic` (sliding stays free).
+/// The `axis` field on `Hinge` records the hinge direction for future
+/// rotational-limit work; it is stored but not yet enforced, and relative
+/// rotation is likewise not yet locked for `Prismatic`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Joint {
     /// Connects body `b` to body `a` at a shared anchor, allowing rotation
@@ -215,6 +217,24 @@ pub enum Joint {
         anchor_a: [f64; 3],
         /// Attachment in body `b`'s local frame.
         anchor_b: [f64; 3],
+    },
+    /// Lets body `b`'s anchor slide along the `axis` line through body
+    /// `a`'s anchor while never leaving it. The two directions
+    /// perpendicular to the axis are constrained; motion along it is
+    /// free. Like `Hinge`, the v1 solver enforces the positional part
+    /// only — relative rotation is not yet locked.
+    Prismatic {
+        /// First body index, or [`STATIC`] for a fixed world anchor.
+        a: usize,
+        /// Second body index.
+        b: usize,
+        /// Attachment in body `a`'s local frame (world-frame if `a == STATIC`).
+        anchor_a: [f64; 3],
+        /// Attachment in body `b`'s local frame.
+        anchor_b: [f64; 3],
+        /// Slide axis in body `a`'s local frame (world-frame if `a == STATIC`).
+        /// Must be non-zero; it is normalized internally.
+        axis: [f64; 3],
     },
 }
 
@@ -378,6 +398,68 @@ fn solve_ball_socket(
     }
 }
 
+/// Sequential-impulse prismatic constraint: body `b`'s anchor may slide
+/// along the axis line through body `a`'s anchor but never leave it. The
+/// two directions perpendicular to the world-frame axis get the same
+/// velocity-plus-Baumgarte treatment as [`solve_ball_socket`]; the axis
+/// direction itself is left unconstrained.
+fn solve_prismatic(
+    bodies: &mut [Body],
+    a: usize,
+    b: usize,
+    anchor_a: [f64; 3],
+    anchor_b: [f64; 3],
+    axis: [f64; 3],
+    dt: f64,
+    baumgarte: f64,
+) {
+    let wa = world_anchor(bodies, a, anchor_a);
+    // World-frame axis: transform a second anchor offset by `axis` and
+    // subtract — reuses the point path, so it is uniform over `STATIC`.
+    let wa2 = world_anchor(
+        bodies,
+        a,
+        [anchor_a[0] + axis[0], anchor_a[1] + axis[1], anchor_a[2] + axis[2]],
+    );
+    let d = jsub(wa2, wa);
+    let len = jdot(d, d).sqrt();
+    if len < 1e-12 {
+        return; // degenerate axis: nothing well-defined to constrain
+    }
+    let d = [d[0] / len, d[1] / len, d[2] / len];
+
+    // Orthonormal pair spanning the plane perpendicular to the axis.
+    let pick = if d[0].abs() < 0.9 { [1.0, 0.0, 0.0] } else { [0.0, 1.0, 0.0] };
+    let c = jcross(d, pick);
+    let clen = jdot(c, c).sqrt();
+    let n1 = [c[0] / clen, c[1] / clen, c[2] / clen];
+    let n2 = jcross(d, n1);
+
+    let wb = world_anchor(bodies, b, anchor_b);
+    let err = jsub(wb, wa);
+
+    for n in [n1, n2] {
+        let vel_b = if b == STATIC { [0.0; 3] } else { body_vel_at(&bodies[b], wb) };
+        let vel_a = if a == STATIC { [0.0; 3] } else { body_vel_at(&bodies[a], wa) };
+        let v_rel = jdot(jsub(vel_b, vel_a), n);
+
+        let r_b = jsub(wb, if b == STATIC { wb } else { bodies[b].rigid.position });
+        let r_a = jsub(wa, if a == STATIC { wa } else { bodies[a].rigid.position });
+        let inv_b = if b == STATIC { 0.0 } else { eff_inv_mass(&bodies[b], r_b, n) };
+        let inv_a = if a == STATIC { 0.0 } else { eff_inv_mass(&bodies[a], r_a, n) };
+        let inv_total = inv_a + inv_b;
+        if inv_total < 1e-30 {
+            continue;
+        }
+
+        let bias = baumgarte / dt * jdot(err, n);
+        let lambda = -(v_rel + bias) / inv_total;
+
+        apply_joint_impulse(bodies, b, n, lambda, wb);
+        apply_joint_impulse(bodies, a, n, -lambda, wa);
+    }
+}
+
 /// Run N_ITER sequential-impulse iterations over all joints.
 fn solve_joints(bodies: &mut [Body], joints: &[Joint], dt: f64) {
     const N_ITER: usize = 10;
@@ -385,11 +467,15 @@ fn solve_joints(bodies: &mut [Body], joints: &[Joint], dt: f64) {
 
     for _ in 0..N_ITER {
         for joint in joints {
-            let (a, b, anchor_a, anchor_b) = match *joint {
-                Joint::Hinge { a, b, anchor_a, anchor_b, .. } => (a, b, anchor_a, anchor_b),
-                Joint::Fixed { a, b, anchor_a, anchor_b } => (a, b, anchor_a, anchor_b),
-            };
-            solve_ball_socket(bodies, a, b, anchor_a, anchor_b, dt, BAUMGARTE);
+            match *joint {
+                Joint::Hinge { a, b, anchor_a, anchor_b, .. }
+                | Joint::Fixed { a, b, anchor_a, anchor_b } => {
+                    solve_ball_socket(bodies, a, b, anchor_a, anchor_b, dt, BAUMGARTE);
+                }
+                Joint::Prismatic { a, b, anchor_a, anchor_b, axis } => {
+                    solve_prismatic(bodies, a, b, anchor_a, anchor_b, axis, dt, BAUMGARTE);
+                }
+            }
         }
     }
 }
@@ -630,6 +716,143 @@ mod tests {
             err < 0.02,
             "period: measured={measured:.4} s, analytic={analytic_period:.4} s, err={:.1} %",
             err * 100.0
+        );
+    }
+
+    // ── Prismatic joint ─────────────────────────────────────────────────────
+
+    /// Sliding along the axis must be unconstrained: a body launched along
+    /// the slide direction keeps its momentum and travels the free-particle
+    /// distance.
+    #[test]
+    fn prismatic_slides_freely_along_axis() {
+        use super::{Joint, STATIC};
+
+        let world = World::new().with_gravity([0.0, 0.0, 0.0]);
+        let mut bodies = [Body::ball(2.0, 0.1)];
+        bodies[0].rigid.linear_momentum = [2.0, 0.0, 0.0]; // v = 1 m/s along x
+
+        let joints = [Joint::Prismatic {
+            a: STATIC,
+            b: 0,
+            anchor_a: [0.0, 0.0, 0.0],
+            anchor_b: [0.0, 0.0, 0.0],
+            axis: [1.0, 0.0, 0.0],
+        }];
+
+        let dt = 0.001;
+        for _ in 0..1000 {
+            world.step(&mut bodies, &joints, dt);
+        }
+        let p = bodies[0].rigid.position;
+        assert!((p[0] - 1.0).abs() < 1e-9, "x = {} (want 1.0)", p[0]);
+        assert!(p[1].abs() < 1e-9 && p[2].abs() < 1e-9, "drifted off axis: {p:?}");
+        assert!(
+            (bodies[0].rigid.linear_momentum[0] - 2.0).abs() < 1e-9,
+            "axis momentum was not conserved"
+        );
+    }
+
+    /// Motion perpendicular to the axis must be killed: a body launched
+    /// sideways stays on the slide line.
+    #[test]
+    fn prismatic_blocks_perpendicular_motion() {
+        use super::{Joint, STATIC};
+
+        let world = World::new().with_gravity([0.0, 0.0, 0.0]);
+        let mut bodies = [Body::ball(2.0, 0.1)];
+        bodies[0].rigid.linear_momentum = [0.0, 2.0, 0.0]; // v = 1 m/s along y
+
+        let joints = [Joint::Prismatic {
+            a: STATIC,
+            b: 0,
+            anchor_a: [0.0, 0.0, 0.0],
+            anchor_b: [0.0, 0.0, 0.0],
+            axis: [1.0, 0.0, 0.0],
+        }];
+
+        let dt = 0.001;
+        for _ in 0..1000 {
+            world.step(&mut bodies, &joints, dt);
+        }
+        let p = bodies[0].rigid.position;
+        assert!(p[1].abs() < 1e-3, "escaped perpendicular: y = {}", p[1]);
+        assert!(
+            bodies[0].rigid.linear_momentum[1].abs() < 1e-6,
+            "perpendicular momentum survived: {}",
+            bodies[0].rigid.linear_momentum[1]
+        );
+    }
+
+    /// A body placed off the slide line is pulled back onto it by the
+    /// Baumgarte bias, without picking up motion along the axis.
+    #[test]
+    fn prismatic_recenters_offset_body() {
+        use super::{Joint, STATIC};
+
+        let world = World::new().with_gravity([0.0, 0.0, 0.0]);
+        let mut bodies = [Body::ball(1.0, 0.1)];
+        bodies[0].rigid.position = [0.3, 0.1, 0.0]; // 0.1 off the x-axis line
+
+        let joints = [Joint::Prismatic {
+            a: STATIC,
+            b: 0,
+            anchor_a: [0.0, 0.0, 0.0],
+            anchor_b: [0.0, 0.0, 0.0],
+            axis: [1.0, 0.0, 0.0],
+        }];
+
+        let dt = 0.001;
+        for _ in 0..2000 {
+            world.step(&mut bodies, &joints, dt);
+        }
+        let p = bodies[0].rigid.position;
+        assert!(p[1].abs() < 1e-3, "not recentered: y = {}", p[1]);
+        assert!((p[0] - 0.3).abs() < 1e-6, "picked up axis drift: x = {}", p[0]);
+    }
+
+    /// Gravity along the slide axis passes straight through: the body falls
+    /// as if free. Gravity perpendicular to it is fully supported.
+    #[test]
+    fn prismatic_supports_perpendicular_gravity_only() {
+        use super::{Joint, STATIC};
+
+        // Slide axis along y, gravity along -y: free fall.
+        let world = World::new().with_gravity([0.0, -10.0, 0.0]);
+        let joints_y = [Joint::Prismatic {
+            a: STATIC,
+            b: 0,
+            anchor_a: [0.0, 0.0, 0.0],
+            anchor_b: [0.0, 0.0, 0.0],
+            axis: [0.0, 1.0, 0.0],
+        }];
+        let mut bodies = [Body::ball(1.0, 0.1)];
+        let dt = 0.001;
+        for _ in 0..1000 {
+            world.step(&mut bodies, &joints_y, dt);
+        }
+        assert!(
+            (bodies[0].rigid.position[1] + 5.0).abs() < 0.02,
+            "did not fall freely along the axis: y = {}",
+            bodies[0].rigid.position[1]
+        );
+
+        // Slide axis along x, same gravity: the joint carries the weight.
+        let joints_x = [Joint::Prismatic {
+            a: STATIC,
+            b: 0,
+            anchor_a: [0.0, 0.0, 0.0],
+            anchor_b: [0.0, 0.0, 0.0],
+            axis: [1.0, 0.0, 0.0],
+        }];
+        let mut bodies = [Body::ball(1.0, 0.1)];
+        for _ in 0..1000 {
+            world.step(&mut bodies, &joints_x, dt);
+        }
+        assert!(
+            bodies[0].rigid.position[1].abs() < 1e-2,
+            "sagged under supported gravity: y = {}",
+            bodies[0].rigid.position[1]
         );
     }
 }
