@@ -156,4 +156,69 @@ proptest! {
             "fast=({fx},{fy},{fz}) vs apply=({ex},{ey},{ez})"
         );
     }
+
+    // --- Motor Bézier splines (RFC-013 R1) -------------------------------
+
+    // The curve interpolates its endpoints exactly (as motions — compare
+    // the action on a point, since the versor sign is irrelevant).
+    #[test]
+    fn bezier_hits_both_endpoints(
+        m1 in any_motor(), m2 in any_motor(), m3 in any_motor(),
+        x in coord(), y in coord(), z in coord(),
+    ) {
+        let ctrl = [m1, m2, m3];
+        let p = pga::Point::new(x, y, z);
+        let start = p.transform(&Motor::bezier(&ctrl, 0.0));
+        let end = p.transform(&Motor::bezier(&ctrl, 1.0));
+        prop_assert!(xyz_close(start.to_euclidean(), p.transform(&m1).to_euclidean()));
+        prop_assert!(xyz_close(end.to_euclidean(), p.transform(&m3).to_euclidean()));
+    }
+
+    // Two control motors reduce Bézier to plain slerp.
+    #[test]
+    fn bezier_of_two_controls_is_slerp(
+        m1 in any_motor(), m2 in any_motor(), t in 0.0f64..1.0,
+    ) {
+        prop_assert!(close(
+            &Motor::bezier(&[m1, m2], t).versor(),
+            &m1.slerp(&m2, t).versor(),
+        ));
+    }
+
+    // Every point on (and beyond) the curve is a unit motor — geodesic
+    // blending never leaves the group, so no renormalization is needed.
+    #[test]
+    fn bezier_stays_unit_norm(
+        m1 in any_motor(), m2 in any_motor(), m3 in any_motor(), m4 in any_motor(),
+        t in -0.5f64..1.5,
+    ) {
+        let b = Motor::bezier(&[m1, m2, m3, m4], t);
+        prop_assert!((b.norm_squared() - 1.0).abs() < 1e-9);
+    }
+
+    // --- Kinematic chains (RFC-013 R2/R3) --------------------------------
+
+    // IK recovers any pose the arm can hold: build the target by FK, then
+    // solve back from a perturbed seed and compare poses (not joint
+    // vectors — elbow flips are fine).
+    #[test]
+    fn ik_round_trips_forward_kinematics(
+        q1 in -2.0f64..2.0, q2 in -2.0f64..2.0,
+    ) {
+        use garust_geo::chain::{Chain, ChainJoint, IkParams, Link};
+
+        let z = Pga3::point(0.0, 0.0, 0.0).line_through(&Pga3::point(0.0, 0.0, 1.0));
+        let links = [
+            Link { offset: Motor::identity(), joint: ChainJoint::Revolute(z) },
+            Link { offset: Motor::translator(1.0, 0.0, 0.0), joint: ChainJoint::Revolute(z) },
+        ];
+        let arm = Chain::new(&links);
+
+        let target = arm.fk(&[q1, q2]);
+        let seed = [q1 + 0.25, q2 - 0.25];
+        let mut q = [0.0_f64; 2];
+        let r = arm.ik_dls(&target, &seed, &mut q, IkParams::default());
+        prop_assert!(r.converged, "err = {}", r.err);
+        prop_assert!(arm.fk(&q).geodesic_distance(&target) < 1e-8);
+    }
 }
