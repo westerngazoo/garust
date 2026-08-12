@@ -442,6 +442,38 @@ impl<T: Real> Motor<T> {
         }
     }
 
+    /// Evaluate the **Bézier curve on the motor manifold** defined by the
+    /// control motors `ctrl` at parameter `t`, by de Casteljau over
+    /// [`slerp`](Motor::slerp): each round replaces adjacent control pairs
+    /// with their screw interpolant until one motor remains.
+    ///
+    /// Because every step is a geodesic blend of unit versors, the result
+    /// is a **unit motor at every `t`** — no renormalization needed — and
+    /// the endpoints are interpolated exactly (`t = 0` gives `ctrl[0]`,
+    /// `t = 1` gives `ctrl[n-1]` as motions). Like `slerp`, `t` outside
+    /// `[0, 1]` extrapolates. A single control motor is returned as-is;
+    /// two controls reduce to plain `slerp` (RFC-013 R1).
+    ///
+    /// # Panics
+    ///
+    /// If `ctrl` is empty or holds more than 8 motors (fixed stack
+    /// scratch; cubic — 4 controls — is the working case).
+    pub fn bezier(ctrl: &[Self], t: T) -> Self {
+        assert!(
+            !ctrl.is_empty() && ctrl.len() <= 8,
+            "Motor::bezier takes 1..=8 control motors"
+        );
+        let mut buf = [Self::identity(); 8];
+        buf[..ctrl.len()].copy_from_slice(ctrl);
+        let mut n = ctrl.len();
+        while n > 1 {
+            for i in 0..n - 1 {
+                buf[i] = buf[i].slerp(&buf[i + 1], t);
+            }
+            n -= 1;
+        }
+        buf[0]
+    }
 }
 
 /// Composition of motions. `a * b` applies `b` first, then `a`.

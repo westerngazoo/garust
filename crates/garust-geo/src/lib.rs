@@ -26,6 +26,7 @@
 #![deny(missing_docs)]
 
 pub mod cga;
+pub mod chain;
 pub mod conformal;
 pub mod motor;
 pub mod pga;
