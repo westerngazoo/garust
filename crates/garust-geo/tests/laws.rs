@@ -239,6 +239,28 @@ proptest! {
         prop_assert_eq!(a.slerp_from_generator(&gen, t), a.slerp(&b, t));
     }
 
+    // --- slerp_unwrapped -------------------------------------------------
+
+    // Winding must be invisible at the end of the span: whatever the turn
+    // count, t = 1 still lands on `b` as a motion, because a full turn
+    // about any line is the identity motion.
+    #[test]
+    fn slerp_unwrapped_hits_the_endpoint_for_any_turn_count(
+        a in any_motor(), b in any_motor(), k in -2i32..3,
+        x in coord(), y in coord(), z in coord(),
+    ) {
+        let p = Pga3::point(x, y, z);
+        prop_assert!(close(&a.slerp_unwrapped(&b, 1.0, k).apply(&p), &b.apply(&p)));
+    }
+
+    // Zero extra turns takes the untouched fast path: slerp, bit for bit.
+    #[test]
+    fn slerp_unwrapped_zero_turns_is_slerp(
+        a in any_motor(), b in any_motor(), t in -0.5f64..1.5,
+    ) {
+        prop_assert_eq!(a.slerp_unwrapped(&b, t, 0), a.slerp(&b, t));
+    }
+
     // --- Kinematic chains (RFC-013 R2/R3) --------------------------------
 
     // IK recovers any pose the arm can hold: build the target by FK, then

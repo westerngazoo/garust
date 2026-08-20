@@ -513,6 +513,76 @@ impl<T: Real> Motor<T> {
         }
     }
 
+    /// [`slerp`](Motor::slerp) with `extra_turns` additional full turns
+    /// wound about the span's screw axis — the escape hatch from the
+    /// short-way fold for animation that must *sweep* a large rotation
+    /// rather than merely arrive at one.
+    ///
+    /// The span generator is the same principal log that `slerp` uses;
+    /// its elliptic (rotation) part is extended by `extra_turns · τ/2`
+    /// of half-angle along its own unit bivector — the rotation about
+    /// the screw axis, wherever that axis lies. A full turn about any
+    /// line is the identity motion and the added term commutes with the
+    /// generator, so the endpoints are untouched: `t = 0` still gives
+    /// `self` and `t = 1` still gives `other` (as motions) while the
+    /// path between them winds the extra turns. Positive `extra_turns`
+    /// wind with the span's own rotation direction, negative against
+    /// it, and `extra_turns = 0` is exactly — bit for bit —
+    /// [`slerp`](Motor::slerp).
+    ///
+    /// # Degenerate spans
+    ///
+    /// A span with no rotation — a pure translation, identical
+    /// rotations at both keys, or the τ-collapse where the fold leaves
+    /// only rotation dust (numerically: a half-angle at or below
+    /// `1e-9`) — has no canonical plane to wind around, so
+    /// `extra_turns` is **ignored** and the result equals
+    /// [`slerp`](Motor::slerp). Winding such a span is an authoring
+    /// decision: put the plane into the keys (e.g. subdivided
+    /// quarter-turn keyframes) instead.
+    ///
+    /// ```
+    /// use garust_geo::Motor;
+    /// use garust_core::Pga3;
+    /// use std::f64::consts::TAU;
+    /// let a = Motor::<f64>::identity();
+    /// let b = Motor::rotor(TAU / 4.0, Pga3::basis(0b0011));
+    /// // Half-way along the wound path: τ/8 plus half the extra turn.
+    /// let mid = a.slerp_unwrapped(&b, 0.5, 1);
+    /// let expect = Motor::rotor(TAU / 8.0 + TAU / 2.0, Pga3::basis(0b0011));
+    /// let p = Pga3::point(1.0, 0.0, 0.0);
+    /// let (got, want) = (mid.apply(&p), expect.apply(&p));
+    /// for i in 0..16 {
+    ///     assert!((got.coeffs[i] - want.coeffs[i]).abs() < 1e-9);
+    /// }
+    /// ```
+    pub fn slerp_unwrapped(&self, other: &Self, t: T, extra_turns: i32) -> Self {
+        let mut gen = self.screw_generator(other);
+        if extra_turns != 0 {
+            // A PGA screw bivector always splits into an elliptic part
+            // (the rotation about the screw axis, squaring to −φ² with
+            // φ the half-angle) plus a null translation part. `None`
+            // (isoclinic) cannot happen in Cl(3,0,1): ⟨B²⟩₀ = −|E|² ≤ 0
+            // and the grade-4 part of B² squares to 0, so the split's
+            // discriminant only degenerates when the Euclidean part
+            // vanishes — which it reports as "already simple" instead.
+            // Fall back to the unmodified span defensively all the same.
+            let (b1, b2) = gen
+                .try_bivector_split()
+                .unwrap_or((gen, Pga::<T>::zero()));
+            let (sq1, sq2) = ((b1 * b1).scalar_part(), (b2 * b2).scalar_part());
+            // The split's part order is arbitrary; the rotation is the
+            // part with the strictly negative square.
+            let (rot, sq) = if sq1 < sq2 { (b1, sq1) } else { (b2, sq2) };
+            let phi = if sq < T::ZERO { (-sq).sqrt() } else { T::ZERO };
+            if phi > T::from_f64(1e-9) {
+                let winds = T::from_f64(0.5 * core::f64::consts::TAU * f64::from(extra_turns));
+                gen += rot * (winds / phi);
+            }
+        }
+        self.slerp_from_generator(&gen, t)
+    }
+
     /// Evaluate the **Bézier curve on the motor manifold** defined by the
     /// control motors `ctrl` at parameter `t`, by de Casteljau over
     /// [`slerp`](Motor::slerp): each round replaces adjacent control pairs
@@ -1075,6 +1145,80 @@ mod tests {
         for &t in &[-0.5, 0.0, 0.25, 0.5, 1.0, 1.5] {
             assert_eq!(a.slerp_from_generator(&gen, t), a.slerp(&b, t));
         }
+    }
+
+    // --- slerp_unwrapped (winding past the short-way fold) --------------
+
+    #[test]
+    fn slerp_unwrapped_zero_turns_is_slerp_bit_for_bit() {
+        let a = Motor::rotor(0.7, Pga3::basis(0b0011)) * Motor::translator(0.0, 2.0, -1.0);
+        let b = Motor::rotor(-0.4, Pga3::basis(0b0110)) * Motor::translator(3.0, 0.0, 0.5);
+        for &t in &[0.0, 0.25, 0.5, 1.0] {
+            assert_eq!(a.slerp_unwrapped(&b, t, 0), a.slerp(&b, t));
+        }
+    }
+
+    #[test]
+    fn slerp_unwrapped_sweeps_the_long_way() {
+        // identity → just-under-half-turn with one extra turn: the path
+        // sweeps θ + τ in the span's own direction and still lands on
+        // the target.
+        let theta = TAU / 2.0 - 1e-3;
+        let plane = Pga3::basis(0b0011);
+        let b = Motor::rotor(theta, plane);
+        let id = Motor::identity();
+        for &t in &[0.25, 0.5, 0.75] {
+            same_motion(
+                &id.slerp_unwrapped(&b, t, 1),
+                &Motor::rotor(t * (theta + TAU), plane),
+                1e-9,
+            );
+        }
+        same_motion(&id.slerp_unwrapped(&b, 1.0, 1), &b, 1e-9);
+    }
+
+    #[test]
+    fn slerp_unwrapped_negative_turns_wind_against_the_span() {
+        let theta = 1.0;
+        let plane = Pga3::basis(0b0011);
+        let b = Motor::rotor(theta, plane);
+        let id = Motor::identity();
+        same_motion(
+            &id.slerp_unwrapped(&b, 0.5, -1),
+            &Motor::rotor((theta - TAU) / 2.0, plane),
+            1e-9,
+        );
+        same_motion(&id.slerp_unwrapped(&b, 1.0, -1), &b, 1e-9);
+    }
+
+    #[test]
+    fn slerp_unwrapped_winds_about_the_screw_axis_not_the_origin() {
+        // An off-origin screw: the extra turn must wind about the span's
+        // own axis (the vertical line through (1,0,0)) — winding about a
+        // parallel origin plane would not commute with the generator and
+        // would drag the midpoint somewhere else entirely.
+        let axis = Pga3::point(1.0, 0.0, 0.0).line_through(&Pga3::point(1.0, 0.0, 1.0));
+        let b = Motor::translator(0.0, 0.0, 0.7) * Motor::rotation_about(axis, 0.8);
+        let id = Motor::identity();
+        let mid = id.slerp_unwrapped(&b, 0.5, 1);
+        let expected =
+            Motor::translator(0.0, 0.0, 0.35) * Motor::rotation_about(axis, (0.8 + TAU) / 2.0);
+        same_motion(&mid, &expected, 1e-9);
+        same_motion(&id.slerp_unwrapped(&b, 1.0, 1), &b, 1e-9);
+    }
+
+    #[test]
+    fn slerp_unwrapped_ignores_turns_on_a_rotation_free_span() {
+        // No rotation, no canonical plane to wind around: extra turns are
+        // ignored (the documented degenerate rule) rather than spun about
+        // whatever numerical dust the log left behind.
+        let id = Motor::identity();
+        let tr = Motor::translator(1.0, 2.0, 3.0);
+        assert_eq!(id.slerp_unwrapped(&tr, 0.5, 1), id.slerp(&tr, 0.5));
+        // The τ-collapsed span leaves ~1e-16 of rotation dust — below
+        // the threshold, so it must not wind either.
+        let full = Motor::rotor(TAU, Pga3::basis(0b0011));
+        assert_eq!(id.slerp_unwrapped(&full, 0.5, 1), id.slerp(&full, 0.5));
     }
 
     // --- Issue #32: Motor::from_unit_quaternion ---
