@@ -60,6 +60,18 @@ prop_compose! {
 }
 
 prop_compose! {
+    // A random rigid motion whose rotor stays below the half-turn fold
+    // (θ < τ/2), so the versor has ⟨M⟩₀ > 0 and `log` is exactly
+    // invertible on the versor, not just on the motion.
+    fn below_fold_motor()(
+        dx in -2.0f64..2.0, dy in -2.0f64..2.0, dz in -2.0f64..2.0,
+        angle in 0.0f64..3.0, axis in 0usize..3,
+    ) -> Motor3 {
+        Motor::translator(dx, dy, dz) * Motor::rotor(angle, pga_axis(axis))
+    }
+}
+
+prop_compose! {
     // A random conformal map: a dilation, then a rotation, then a
     // translation, all about the origin.
     fn any_conformal()(
@@ -194,6 +206,25 @@ proptest! {
     ) {
         let b = Motor::bezier(&[m1, m2, m3, m4], t);
         prop_assert!((b.norm_squared() - 1.0).abs() < 1e-9);
+    }
+
+    // --- Motor::exp / Motor::log round trips -----------------------------
+
+    // exp inverts log exactly on the versor while the rotation stays below
+    // the τ/2 fold — for translators, rotors, and general screws alike...
+    #[test]
+    fn motor_exp_inverts_log_on_the_versor_below_the_fold(m in below_fold_motor()) {
+        prop_assert!(close(&Motor::exp(m.log()).versor(), &m.versor()));
+    }
+
+    // ...and as a *motion* everywhere, the versor's sign being
+    // unobservable in the sandwich.
+    #[test]
+    fn motor_exp_inverts_log_as_a_motion(
+        m in any_motor(), x in coord(), y in coord(), z in coord(),
+    ) {
+        let p = Pga3::point(x, y, z);
+        prop_assert!(close(&Motor::exp(m.log()).apply(&p), &m.apply(&p)));
     }
 
     // --- Kinematic chains (RFC-013 R2/R3) --------------------------------

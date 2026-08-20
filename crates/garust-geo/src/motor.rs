@@ -21,6 +21,7 @@ use core::ops::Mul;
 
 use garust_core::multivector::Multivector;
 use garust_core::scalar::{Real, Scalar};
+use garust_core::signature::grade_of;
 use garust_core::Pga3Sig;
 
 /// The PGA multivector type a [`Motor`] wraps: `Cl(3, 0, 1)` over `T`.
@@ -419,6 +420,44 @@ impl<T: Real> Motor<T> {
     /// principal-branch contract.
     pub fn log(&self) -> Pga<T> {
         self.versor.log()
+    }
+
+    /// Exponential of a **screw bivector** — the inverse of
+    /// [`log`](Motor::log), mapping Lie-algebra coordinates back to the
+    /// motor: `Motor::exp(m.log())` reproduces `m` whenever `⟨m⟩₀ ≥ 0`,
+    /// and `−m` — the same motion — otherwise (the log folds that sign
+    /// away; see [`Multivector::log`](garust_core::Multivector::log)).
+    ///
+    /// # Generator contract
+    ///
+    /// `b` must be a PGA **bivector** (grade 2 only, debug-asserted): a
+    /// Euclidean plane gives a rotor, a null (`e0`-containing) plane a
+    /// translator, and a mixed screw bivector — anything
+    /// [`log`](Motor::log) can return — a general screw motion. For such
+    /// generators the result is always a unit motor. Anything else
+    /// exponentiates fine in the kernel but is not a rigid motion, so it
+    /// has no business being wrapped in a [`Motor`].
+    ///
+    /// This is [`Multivector::exp`](garust_core::Multivector::exp) +
+    /// [`Motor::from_versor`] with the contract stated once, so
+    /// log-space code (blending, filtering, integration) never has to
+    /// leak the raw kernel type.
+    ///
+    /// ```
+    /// use garust_geo::Motor;
+    /// use garust_core::Pga3;
+    /// let m = Motor::rotor(1.1, Pga3::basis(0b0110)) * Motor::translator(0.5, 0.0, -2.0);
+    /// let back = Motor::exp(m.log());
+    /// for i in 0..16 {
+    ///     assert!((back.versor().coeffs[i] - m.versor().coeffs[i]).abs() < 1e-12);
+    /// }
+    /// ```
+    pub fn exp(b: Pga<T>) -> Self {
+        debug_assert!(
+            (0..16).all(|i| grade_of(i) == 2 || b.coeffs[i] == T::ZERO),
+            "Motor::exp: the generator must be a screw bivector (grade 2)",
+        );
+        Self { versor: b.exp() }
     }
 
     /// Smooth screw interpolation between two motors — the motor "slerp".
@@ -968,6 +1007,30 @@ mod tests {
             let n = Motor::rotor(theta, plane).log().norm();
             assert!(n <= TAU / 4.0 + 1e-9, "theta={theta}: |log| = {n}");
         }
+    }
+
+    // --- Motor::exp (the log's inverse) ---------------------------------
+
+    #[test]
+    fn exp_round_trips_translator_rotor_and_screw_logs() {
+        let cases = [
+            Motor::translator(1.5, -2.0, 0.5),
+            Motor::rotor(2.0, Pga3::basis(0b0011)),
+            Motor::translator(1.0, 2.0, 3.0) * Motor::rotor(1.1, Pga3::basis(0b0101)),
+        ];
+        for m in cases {
+            approx_eq(&Motor::exp(m.log()).versor().coeffs, &m.versor().coeffs, 1e-12);
+        }
+    }
+
+    #[test]
+    fn exp_of_a_folded_log_flips_the_versor_sign_only() {
+        // Past a half turn the log folds the versor sign, so exp returns
+        // −versor: a different versor, the same motion.
+        let m = Motor::rotor(TAU / 2.0 + 1.0, Pga3::basis(0b0011));
+        let back = Motor::exp(m.log());
+        approx_eq(&back.versor().coeffs, &(m.versor() * -1.0).coeffs, 1e-12);
+        same_motion(&back, &m, 1e-12);
     }
 
     // --- Issue #32: Motor::from_unit_quaternion ---
