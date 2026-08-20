@@ -47,9 +47,9 @@ use garust_core::Pga3Sig;
 use crate::Motor;
 
 /// Re-exported so the umbrella crate's `garust::pga` namespace keeps the
-/// PGA-aware [`Display`](core::fmt::Display) adapter alongside the typed
-/// objects.
-pub use garust_core::pga::PgaDisplay;
+/// kernel's PGA-aware [`Display`](core::fmt::Display) adapter and the
+/// screw-axis data it decomposes twists into alongside the typed objects.
+pub use garust_core::pga::{PgaDisplay, ScrewAxis};
 
 /// The PGA multivector type these objects wrap: `Cl(3, 0, 1)` over `T`.
 type Pga<T> = Multivector<Pga3Sig, T>;
@@ -174,6 +174,68 @@ impl<T: Scalar> Line<T> {
             mv: self.mv.wedge(&plane.mv),
         }
     }
+
+    /// The line's direction `d`, the Euclidean half of its Plücker
+    /// coordinates `(d, m)` — the convention a renderer strokes by.
+    ///
+    /// Signs are pinned so a join runs from its first point to its second:
+    /// [`Line::through(a, b)`](Line::through) has `direction() == b − a`,
+    /// and the meet of two planes ([`Plane::meet`]) with normals `n₁`, `n₂`
+    /// has `direction() == n₂ × n₁`. Unnormalized: it scales with the
+    /// line's weight (join of unit-weight points ⇒ exactly `b − a`), and
+    /// an *ideal* line (e.g. the meet of parallel planes) has direction
+    /// zero.
+    ///
+    /// Note the sign seam against the *rotation* machinery: used as a
+    /// rotation axis ([`Motor::rotation_about`], twist bivectors), this
+    /// same blade spins right-handed about `−direction()` — i.e. about
+    /// `a − b` for a join. The two readings differ by exactly a sign;
+    /// pick per use and don't mix.
+    pub fn direction(&self) -> [T; 3] {
+        let c = &self.mv.coeffs;
+        [-c[0b0110], c[0b0101], -c[0b0011]]
+    }
+
+    /// The line's Plücker moment `m = p × d` (for any point `p` on the
+    /// line and `d = `[`direction()`](Line::direction)) — the ideal half
+    /// of its Plücker coordinates.
+    ///
+    /// For a join [`Line::through(a, b)`](Line::through) of unit-weight
+    /// points this is exactly `a × b`. Like the direction it scales with
+    /// the line's weight; the pair `(d, m)` always satisfies `d · m = 0`.
+    pub fn moment(&self) -> [T; 3] {
+        let c = &self.mv.coeffs;
+        [c[0b1001], c[0b1010], c[0b1100]]
+    }
+
+    /// The point on the line closest to the origin, `(d × m) / ‖d‖²` —
+    /// [`Line::point_at`] at parameter zero, and the natural anchor for
+    /// stroking the line.
+    ///
+    /// Meant for finite lines: an ideal line (zero direction) divides by
+    /// zero and yields non-finite coordinates.
+    pub fn point_closest_to_origin(&self) -> Point<T> {
+        self.point_at(T::ZERO)
+    }
+
+    /// The point `point_closest_to_origin() + t·direction()` — walk the
+    /// line by parameter `t`.
+    ///
+    /// The parametrization is *unnormalized*: `t` is in units of the
+    /// line's weight `‖direction()‖`, so for a join of unit-weight points
+    /// `point_at(0)` is the closest point to the origin and `t` advances
+    /// by whole `b − a` steps. Meant for finite lines; an ideal line
+    /// divides by zero.
+    pub fn point_at(&self, t: T) -> Point<T> {
+        let d = self.direction();
+        let m = self.moment();
+        let n = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
+        Point::new(
+            (d[1] * m[2] - d[2] * m[1]) / n + d[0] * t,
+            (d[2] * m[0] - d[0] * m[2]) / n + d[1] * t,
+            (d[0] * m[1] - d[1] * m[0]) / n + d[2] * t,
+        )
+    }
 }
 
 impl<T: Scalar> Plane<T> {
@@ -197,6 +259,26 @@ impl<T: Scalar> Plane<T> {
         Line {
             mv: self.mv.wedge(&other.mv),
         }
+    }
+
+    /// The plane's normal direction `(a, b, c)` — the Euclidean
+    /// coefficients of `a·x + b·y + c·z + d = 0`, exactly as passed to
+    /// [`Plane::new`].
+    ///
+    /// Unnormalized: a plane built by join/meet carries its construction's
+    /// weight, so normalize before using it as a unit normal.
+    pub fn normal(&self) -> [T; 3] {
+        let c = &self.mv.coeffs;
+        [c[0b0001], c[0b0010], c[0b0100]]
+    }
+
+    /// The plane's offset `d` in `a·x + b·y + c·z + d = 0` — the null
+    /// (`e0`) coefficient, exactly as passed to [`Plane::new`].
+    ///
+    /// Shares the plane's weight with [`Plane::normal`]: the origin
+    /// distance of the plane is `−d / ‖(a, b, c)‖`.
+    pub fn offset(&self) -> T {
+        self.mv.coeffs[0b1000]
     }
 }
 
@@ -308,5 +390,85 @@ mod tests {
         let t = Motor::translator(0.0, 0.0, 3.0); // lift by 3 ⇒ z = 5
         let moved = plane.transform(&t).multivector().cleaned(1e-10);
         assert_eq!(moved.grade(1), moved); // still a plane
+    }
+
+    // --- Coordinate accessors -------------------------------------------
+
+    #[test]
+    fn join_direction_runs_from_the_first_point_to_the_second() {
+        let line = Point::new(0.0, 0.0, 0.0).join(&Point::new(1.0, 0.0, 0.0));
+        assert_eq!(line.direction(), [1.0, 0.0, 0.0]);
+        assert_eq!(line.moment(), [0.0, 0.0, 0.0]); // through the origin
+    }
+
+    #[test]
+    fn join_direction_and_moment_are_the_plucker_pair() {
+        // a = (1,2,3), b = (3,2,4): d = b − a = (2,0,1), m = a × b = (2,5,−4).
+        let a: Point = Point::new(1.0, 2.0, 3.0);
+        let b = Point::new(3.0, 2.0, 4.0);
+        let line = a.join(&b);
+        assert_eq!(line.direction(), [2.0, 0.0, 1.0]);
+        assert_eq!(line.moment(), [2.0, 5.0, -4.0]);
+        // The Plücker incidence invariant d · m = 0.
+        let (d, m) = (line.direction(), line.moment());
+        assert_eq!(d[0] * m[0] + d[1] * m[1] + d[2] * m[2], 0.0);
+    }
+
+    #[test]
+    fn point_at_walks_the_line_from_the_closest_point() {
+        // The vertical line through (1, 2, 0): closest point to the origin
+        // has z = 0, and point_at advances by whole direction steps.
+        let line = Point::new(1.0, 2.0, 0.0).join(&Point::new(1.0, 2.0, 1.0));
+        approx_xyz(line.point_closest_to_origin().to_euclidean(), (1.0, 2.0, 0.0));
+        approx_xyz(line.point_at(2.5).to_euclidean(), (1.0, 2.0, 2.5));
+        approx_xyz(line.point_at(-1.0).to_euclidean(), (1.0, 2.0, -1.0));
+    }
+
+    #[test]
+    fn point_at_lands_on_the_joined_points() {
+        // For a join of unit-weight points the parametrization is exact:
+        // some t hits a, t+1 hits b. Here a is 1 step below the closest
+        // point (0,0,0) along d = (1,0,0)… check both endpoints directly.
+        let a: Point = Point::new(-1.0, 0.0, 0.0);
+        let b = Point::new(2.0, 0.0, 0.0);
+        let line = a.join(&b); // d = (3,0,0), closest = origin
+        approx_xyz(line.point_at(0.0).to_euclidean(), (0.0, 0.0, 0.0));
+        // t is in units of ‖d‖ = 3: t = ⅓ steps one unit along x.
+        approx_xyz(
+            line.point_at(1.0 / 3.0).to_euclidean(),
+            (1.0, 0.0, 0.0),
+        );
+    }
+
+    #[test]
+    fn meet_direction_is_n2_cross_n1() {
+        // x = 1 meets y = 2 in the vertical line through (1, 2, 0); with
+        // the join-pinned signs its direction is n₂ × n₁ = (0, 0, −1).
+        let px: Plane = Plane::new(1.0, 0.0, 0.0, -1.0);
+        let py = Plane::new(0.0, 1.0, 0.0, -2.0);
+        let line = px.meet(&py);
+        assert_eq!(line.direction(), [0.0, 0.0, -1.0]);
+        approx_xyz(line.point_closest_to_origin().to_euclidean(), (1.0, 2.0, 0.0));
+    }
+
+    #[test]
+    fn plane_round_trips_normal_and_offset() {
+        let plane: Plane = Plane::new(1.5, -2.0, 3.0, 4.25);
+        assert_eq!(plane.normal(), [1.5, -2.0, 3.0]);
+        assert_eq!(plane.offset(), 4.25);
+    }
+
+    #[test]
+    fn rotation_about_spins_right_handed_about_minus_direction() {
+        // The documented sign seam: a join line's rotation sense is the
+        // opposite of its stroke direction. direction() here is +z, and
+        // rotation_about spins right-handed about −z: (1,0,0) → (0,−1,0).
+        let line = Point::new(0.0, 0.0, 0.0).join(&Point::new(0.0, 0.0, 1.0));
+        assert_eq!(line.direction(), [0.0, 0.0, 1.0]);
+        let m = Motor::rotation_about(line.multivector(), TAU / 4.0);
+        approx_xyz(
+            Point::new(1.0, 0.0, 0.0).transform(&m).to_euclidean(),
+            (0.0, -1.0, 0.0),
+        );
     }
 }
