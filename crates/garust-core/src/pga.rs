@@ -124,6 +124,44 @@ impl<T: Scalar> Multivector<Pga3Sig, T> {
             + (e0 * e3) * fz
     }
 
+    /// The exact inverse of [`Multivector::twist`]: read the six grade-2
+    /// components back out as `([vx, vy, vz], [wx, wy, wz])`.
+    ///
+    /// `twist` writes its arguments onto the six bivector blades with the
+    /// signs below. The stored basis keeps generators in bit order with the
+    /// null generator *last*, so the PGA-literature blades `e31`, `e01`,
+    /// `e02`, `e03` land on their stored slots with a sign flip:
+    ///
+    /// | argument | blade (PGA order) | stored slot        | stored sign |
+    /// |----------|-------------------|--------------------|-------------|
+    /// | `wx`     | `e23`             | `0b0110`           | `+`         |
+    /// | `wy`     | `e31`             | `0b0101` (`e13`)   | `−`         |
+    /// | `wz`     | `e12`             | `0b0011`           | `+`         |
+    /// | `vx`     | `e01`             | `0b1001` (`e1∧e0`) | `−`         |
+    /// | `vy`     | `e02`             | `0b1010` (`e2∧e0`) | `−`         |
+    /// | `vz`     | `e03`             | `0b1100` (`e3∧e0`) | `−`         |
+    ///
+    /// This method undoes exactly those signs, so
+    /// `Pga3::twist(v, w).twist_parts() == (v, w)` bit-for-bit — placing
+    /// and negating coefficients is exact in floating point, and no other
+    /// arithmetic happens. [`Multivector::wrench`] shares the layout, so
+    /// the same call splits a wrench into `([fx, fy, fz], [tx, ty, tz])`.
+    /// Only the six grade-2 slots are read; any other grades present are
+    /// ignored.
+    ///
+    /// ```
+    /// use garust_core::Pga3;
+    /// let b = Pga3::twist(1.0, 2.0, 3.0, 4.0, 5.0, 6.0);
+    /// assert_eq!(b.twist_parts(), ([1.0, 2.0, 3.0], [4.0, 5.0, 6.0]));
+    /// ```
+    pub fn twist_parts(&self) -> ([T; 3], [T; 3]) {
+        let c = &self.coeffs;
+        (
+            [-c[0b1001], -c[0b1010], -c[0b1100]],
+            [c[0b0110], -c[0b0101], c[0b0011]],
+        )
+    }
+
     /// A PGA-aware [`fmt::Display`] view that prints the null generator
     /// as `e0`, written *first* in each blade, matching the PGA
     /// literature.
@@ -214,6 +252,7 @@ impl<T: Real> fmt::Display for PgaDisplay<T> {
 #[cfg(test)]
 mod tests {
     use crate::Pga3;
+    use proptest::prelude::*;
 
     // --- Grades ---------------------------------------------------------
 
@@ -384,4 +423,36 @@ mod tests {
         let w = Pga3::wrench(1.0, 2.0, 3.0, 4.0, 5.0, 6.0);
         assert_eq!(b.coeffs, w.coeffs);
     }
+
+    // --- twist_parts ------------------------------------------------------
+
+    #[test]
+    fn twist_parts_inverts_twist_exactly() {
+        let (v, w) = ([1.0, -2.5, 3.25], [-4.0, 5.5, -6.125]);
+        let b = Pga3::twist(v[0], v[1], v[2], w[0], w[1], w[2]);
+        assert_eq!(b.twist_parts(), (v, w));
+    }
+
+    #[test]
+    fn twist_parts_reads_only_the_bivector_slots() {
+        // A point (grade 3) has nothing on the six grade-2 blades.
+        assert_eq!(
+            Pga3::point(1.0, 2.0, 3.0).twist_parts(),
+            ([0.0; 3], [0.0; 3])
+        );
+    }
+
+    proptest! {
+        // The round-trip is exact: construction and extraction only place
+        // and negate coefficients, so no floating-point error can appear.
+        #[test]
+        fn twist_parts_twist_round_trip_is_exact(
+            vx in -1e6_f64..1e6, vy in -1e6_f64..1e6, vz in -1e6_f64..1e6,
+            wx in -1e6_f64..1e6, wy in -1e6_f64..1e6, wz in -1e6_f64..1e6,
+        ) {
+            let b = Pga3::twist(vx, vy, vz, wx, wy, wz);
+            prop_assert_eq!(b.twist_parts(), ([vx, vy, vz], [wx, wy, wz]));
+        }
+    }
+
 }
