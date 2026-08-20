@@ -470,10 +470,51 @@ impl<T: Real> Motor<T> {
     /// M(t) = exp(t · log(other ∘ self⁻¹)) ∘ self
     /// ```
     ///
-    /// Because [`log`](Motor::log) folds the versor sign, the path takes
-    /// the short way around — the motor analogue of quaternion slerp's
-    /// antipodal flip. `t` outside `[0, 1]` extrapolates along the same
-    /// screw.
+    /// `t` outside `[0, 1]` extrapolates along the same screw. Evaluating
+    /// many `t` on one span? Cache the log once with
+    /// [`screw_generator`](Motor::screw_generator) and replay it with
+    /// [`slerp_from_generator`](Motor::slerp_from_generator).
+    ///
+    /// # Short-way fold: one span carries at most τ/2 of rotation
+    ///
+    /// Because [`log`](Motor::log) folds the versor sign (the motor
+    /// analogue of quaternion slerp's antipodal flip), the path always
+    /// takes the **short way**, and the rotation swept by a single span
+    /// is capped at a **half turn**. Concretely, interpolating from the
+    /// identity to `rotor(θ, plane)`:
+    ///
+    /// - **θ < τ/2** — sweeps forward by `θ`, as expected.
+    /// - **θ = τ/2 exactly** — both ways around are equally short; the
+    ///   direction is a floating-point tie-break on the versor's
+    ///   coefficient signs (`⟨R⟩₀ = 0` up to rounding dust). In practice
+    ///   it lands on the authored direction — pinned by test, not a
+    ///   geometric guarantee.
+    /// - **τ/2 < θ < τ** — sweeps *backwards* by `τ − θ`: the pose at
+    ///   `t = 1` is still right, but `θ = τ − ε` plays as a small
+    ///   reverse rotation, not an almost-full forward turn.
+    /// - **θ = τ** — `rotor(τ, plane)` is the identity motion carried by
+    ///   the versor `−1`; the fold erases it and the span **collapses**:
+    ///   every `t` returns (numerically) `self`.
+    ///
+    /// To *sweep* more than the fold allows — a visible full turn, say —
+    /// author intermediate keys (quarter-turn steps leave a comfortable
+    /// margin) or wind the span deliberately with
+    /// [`slerp_unwrapped`](Motor::slerp_unwrapped).
+    ///
+    /// ```
+    /// use garust_geo::Motor;
+    /// use garust_core::Pga3;
+    /// use std::f64::consts::TAU;
+    /// let id = Motor::<f64>::identity();
+    /// // A τ target collapses: the "midpoint" is still the identity...
+    /// let full = Motor::rotor(TAU, Pga3::basis(0b0011));
+    /// assert!(id.slerp(&full, 0.5).geodesic_distance(&id) < 1e-9);
+    /// // ...while τ/2 − ε interpolates forward as expected.
+    /// let theta = TAU / 2.0 - 1e-3;
+    /// let near = Motor::rotor(theta, Pga3::basis(0b0011));
+    /// let mid = Motor::rotor(theta / 2.0, Pga3::basis(0b0011));
+    /// assert!(id.slerp(&near, 0.5).geodesic_distance(&mid) < 1e-9);
+    /// ```
     pub fn slerp(&self, other: &Self, t: T) -> Self {
         self.slerp_from_generator(&self.screw_generator(other), t)
     }
