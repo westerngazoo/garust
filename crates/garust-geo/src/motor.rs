@@ -475,9 +475,41 @@ impl<T: Real> Motor<T> {
     /// antipodal flip. `t` outside `[0, 1]` extrapolates along the same
     /// screw.
     pub fn slerp(&self, other: &Self, t: T) -> Self {
-        let delta = (other.versor * self.versor.versor_inverse()).log();
+        self.slerp_from_generator(&self.screw_generator(other), t)
+    }
+
+    /// The **span generator** of the screw from `self` to `other`: the
+    /// bivector `log(other ∘ self⁻¹)` that [`slerp`](Motor::slerp)
+    /// exponentiates. Computing it is the expensive half of a slerp (a
+    /// bivector split plus several dense 16×16 product traversals), and
+    /// it is *constant over a keyframe span* — so an animation track can
+    /// pay for it once per span and evaluate frames with
+    /// [`slerp_from_generator`](Motor::slerp_from_generator), instead of
+    /// re-deriving it every frame inside [`slerp`](Motor::slerp).
+    ///
+    /// `a.slerp_from_generator(&a.screw_generator(&b), t)` returns
+    /// exactly — bit for bit — what `a.slerp(&b, t)` returns (`slerp` is
+    /// literally that composition). The generator inherits `log`'s
+    /// principal branch, so the span it encodes takes the short way and
+    /// carries at most τ/2 of rotation; see [`slerp`](Motor::slerp).
+    pub fn screw_generator(&self, other: &Self) -> Pga<T> {
+        (other.versor * self.versor.versor_inverse()).log()
+    }
+
+    /// Evaluate the screw interpolation from `self` along a precomputed
+    /// span generator: `exp(t·gen) ∘ self`, the cheap half of
+    /// [`slerp`](Motor::slerp) with the
+    /// [`screw_generator`](Motor::screw_generator) factored out.
+    ///
+    /// `gen` must be the generator of a span *starting at `self`*
+    /// (normally `self.screw_generator(&other)`, cached while the span
+    /// lasts); pairing it with any other start motor evaluates some
+    /// other screw entirely. `t = 0` gives `self`, `t = 1` the span's
+    /// end, and `t` outside `[0, 1]` extrapolates — exactly as in
+    /// [`slerp`](Motor::slerp).
+    pub fn slerp_from_generator(&self, gen: &Pga<T>, t: T) -> Self {
         Self {
-            versor: (delta * t).exp() * self.versor,
+            versor: (*gen * t).exp() * self.versor,
         }
     }
 
@@ -1031,6 +1063,18 @@ mod tests {
         let back = Motor::exp(m.log());
         approx_eq(&back.versor().coeffs, &(m.versor() * -1.0).coeffs, 1e-12);
         same_motion(&back, &m, 1e-12);
+    }
+
+    // --- Generator-cached slerp -----------------------------------------
+
+    #[test]
+    fn slerp_from_generator_replays_slerp_bit_for_bit() {
+        let a = Motor::rotor(0.7, Pga3::basis(0b0011)) * Motor::translator(0.0, 2.0, -1.0);
+        let b = Motor::rotor(-0.4, Pga3::basis(0b0110)) * Motor::translator(3.0, 0.0, 0.5);
+        let gen = a.screw_generator(&b);
+        for &t in &[-0.5, 0.0, 0.25, 0.5, 1.0, 1.5] {
+            assert_eq!(a.slerp_from_generator(&gen, t), a.slerp(&b, t));
+        }
     }
 
     // --- Issue #32: Motor::from_unit_quaternion ---

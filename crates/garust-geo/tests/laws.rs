@@ -227,6 +227,18 @@ proptest! {
         prop_assert!(close(&Motor::exp(m.log()).apply(&p), &m.apply(&p)));
     }
 
+    // --- Generator-cached slerp (log once per span) -----------------------
+
+    // Caching the span generator must not change the curve: bit-for-bit
+    // equality with slerp, for every t including extrapolation.
+    #[test]
+    fn slerp_from_generator_matches_slerp_exactly(
+        a in any_motor(), b in any_motor(), t in -0.5f64..1.5,
+    ) {
+        let gen = a.screw_generator(&b);
+        prop_assert_eq!(a.slerp_from_generator(&gen, t), a.slerp(&b, t));
+    }
+
     // --- Kinematic chains (RFC-013 R2/R3) --------------------------------
 
     // IK recovers any pose the arm can hold: build the target by FK, then
