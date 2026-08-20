@@ -497,6 +497,13 @@ mod tests {
         }
     }
 
+    /// Assert two motors are the same *motion* (their action on a probe
+    /// point agrees) — the versor's overall sign is irrelevant.
+    fn same_motion(a: &Motor<f64>, b: &Motor<f64>, tol: f64) {
+        let p = Pga3::point(1.0, -0.5, 0.25);
+        approx_eq(&a.apply(&p).coeffs, &b.apply(&p).coeffs, tol);
+    }
+
     #[test]
     fn from_unit_quaternion_identity() {
         let m = Motor::from_unit_quaternion(1.0, 0.0, 0.0, 0.0);
@@ -864,6 +871,102 @@ mod tests {
             let direct = Motor::from_versor((gen * t).exp());
             let lerped = Motor::identity().slerp(&screw, t);
             approx_eq(&lerped.apply(&p).coeffs, &direct.apply(&p).coeffs, 1e-10);
+        }
+    }
+
+    // --- Slerp principal-branch semantics ------------------------------
+    //
+    // `log` folds the versor sign to ⟨R⟩₀ ≥ 0 before recovering the screw,
+    // so a single slerp span always takes the *short way* and its rotation
+    // is capped at a half turn (τ/2). These tests pin what that means at
+    // the branch boundaries — none of it is an accident to be "fixed"
+    // silently; see the `Motor::slerp` docs.
+
+    #[test]
+    fn slerp_just_under_half_turn_interpolates_forward() {
+        // θ < τ/2: forward really is the short way — the span sweeps the
+        // authored rotation, scaled by t.
+        let theta = TAU / 2.0 - 1e-3;
+        let plane = Pga3::basis(0b0011);
+        let b = Motor::rotor(theta, plane);
+        let id = Motor::identity();
+        for &t in &[0.25, 0.5, 0.75, 1.0] {
+            same_motion(&id.slerp(&b, t), &Motor::rotor(t * theta, plane), 1e-9);
+        }
+    }
+
+    #[test]
+    fn slerp_at_exactly_half_turn_direction_is_a_float_tie_break() {
+        // rotor(τ/2, P) and rotor(−τ/2, P) are the SAME motion (a half
+        // turn lands identically either way; the versors are ∓P). With
+        // ⟨R⟩₀ = 0 there is no geometric short way: the branch is picked
+        // by the float sign of the versor's coefficients — the scalar's
+        // rounding dust (cos(τ/4) ≈ +6.1e-17 > 0, so no fold) and then
+        // the bivector's sign. Net effect today: each versor slerps in
+        // its *authored* direction, so identical end motions take
+        // opposite midpoints.
+        let plane = Pga3::basis(0b0011);
+        let pos = Motor::rotor(TAU / 2.0, plane);
+        let neg = Motor::rotor(-TAU / 2.0, plane);
+        same_motion(&pos, &neg, 1e-12); // one motion...
+        let id = Motor::identity();
+        same_motion(&id.slerp(&pos, 0.5), &Motor::rotor(TAU / 4.0, plane), 1e-9);
+        same_motion(&id.slerp(&neg, 0.5), &Motor::rotor(-TAU / 4.0, plane), 1e-9);
+    }
+
+    #[test]
+    fn slerp_just_past_half_turn_flips_to_the_short_way() {
+        // θ = τ/2 + ε: the short way is now *backwards* by τ − θ, so the
+        // midpoint jumps to the far side of where a forward sweep would
+        // sit — an ε-sized change of key crosses the branch cut. The
+        // endpoint still agrees as a motion (θ − τ ≡ θ mod τ).
+        let theta = TAU / 2.0 + 1e-3;
+        let plane = Pga3::basis(0b0011);
+        let b = Motor::rotor(theta, plane);
+        let id = Motor::identity();
+        same_motion(&id.slerp(&b, 0.5), &Motor::rotor((theta - TAU) / 2.0, plane), 1e-9);
+        same_motion(&id.slerp(&b, 1.0), &b, 1e-9);
+    }
+
+    #[test]
+    fn slerp_just_under_a_full_turn_plays_a_small_backwards_rotation() {
+        // θ = τ − ε folds to a rotation by −ε: the pose at t = 1 is
+        // right, but the sweep is a tiny reversal instead of an
+        // almost-full turn. Subdivide keys to author the full sweep.
+        let theta = TAU - 1e-3;
+        let plane = Pga3::basis(0b0011);
+        let b = Motor::rotor(theta, plane);
+        let id = Motor::identity();
+        for &t in &[0.5, 1.0] {
+            same_motion(&id.slerp(&b, t), &Motor::rotor(t * (theta - TAU), plane), 1e-9);
+        }
+    }
+
+    #[test]
+    fn slerp_to_a_full_turn_collapses_to_the_identity() {
+        // rotor(τ, P) is the identity motion carried by the versor −1;
+        // the sign fold erases it, log ≈ 0, and the whole span
+        // degenerates — every t returns (numerically) the identity.
+        // This is why RFC-012 §3.5 must not author a full turn in one
+        // span.
+        let plane = Pga3::basis(0b0011);
+        let full = Motor::rotor(TAU, plane);
+        assert!((full.versor().coeffs[0] + 1.0).abs() < 1e-12, "versor is −1");
+        let id = Motor::identity();
+        for &t in &[0.25, 0.5, 0.75, 1.0] {
+            same_motion(&id.slerp(&full, t), &id, 1e-9);
+        }
+    }
+
+    #[test]
+    fn slerp_span_rotation_never_exceeds_a_half_turn() {
+        // The folded log caps the recovered half-angle at τ/4, i.e. a
+        // single span sweeps at most τ/2 of rotation however much was
+        // authored (|log| peaks at θ = τ/2, then *decreases* again).
+        let plane = Pga3::basis(0b0011);
+        for &theta in &[0.1, 1.0, 2.0, 3.0, TAU / 2.0, 4.0, 5.0, 6.0, TAU - 1e-6, TAU] {
+            let n = Motor::rotor(theta, plane).log().norm();
+            assert!(n <= TAU / 4.0 + 1e-9, "theta={theta}: |log| = {n}");
         }
     }
 
