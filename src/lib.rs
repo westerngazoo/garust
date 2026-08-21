@@ -74,6 +74,9 @@
 //! - typed PGA geometry in [`pga`]: [`pga::Point`], [`pga::Line`],
 //!   [`pga::Plane`] with type-checked join/meet incidence
 //!   (`a.meet(&b).meet(&c)`, `a.join(&b).join(&c)`)
+//! - open kinematic chains in [`chain`]: screw-axis joints, forward
+//!   kinematics as a single motor product, and damped-least-squares
+//!   inverse kinematics (RFC-013)
 //! - CGA geometric constructors for `Cl(4,1,0)`: `cga_point`, `sphere`,
 //!   `cga_plane`, on the null-cone conformal model
 //! - [`Conformal`] — conformal transformations in CGA (translators,
@@ -139,9 +142,11 @@ pub use garust_core::{
 };
 // `pga` and `cga` come from the geometry layer: each bundles that model's
 // typed objects (Point/Line/Plane, Point/Sphere/Plane), and `pga` also
-// re-exports the kernel's PGA-aware Display adapter.
+// re-exports the kernel's PGA-aware Display adapter. `chain` is the
+// kinematic layer on top of `Motor`: screw-axis joints, forward
+// kinematics as a motor product, and damped-least-squares IK (RFC-013).
 #[doc(no_inline)]
-pub use garust_geo::{cga, conformal, motor, pga};
+pub use garust_geo::{cga, chain, conformal, motor, pga};
 
 // --- The kernel: traits, the multivector, signatures, and aliases --------
 #[doc(inline)]

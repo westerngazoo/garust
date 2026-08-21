@@ -28,6 +28,7 @@
 //! ```
 
 use garust_core::Pga3;
+use garust_geo::Motor;
 
 use crate::contact::{resolve_pair, resolve_static, Contact, Sphere};
 use crate::{Inertia, RigidBody};
@@ -62,6 +63,14 @@ impl Body {
             restitution: 1.0,
             mu: 0.0,
         }
+    }
+
+    /// The body-to-world transform of this body's dynamics state —
+    /// forwards to [`RigidBody::pose`], saving the `.rigid` hop when all a
+    /// caller (a renderer, say) wants from a simulated body is where to
+    /// draw it.
+    pub fn pose(&self) -> Motor<f64> {
+        self.rigid.pose()
     }
 }
 
@@ -512,6 +521,13 @@ mod tests {
             .iter()
             .map(|b| b.rigid.kinetic_energy(&b.inertia))
             .sum()
+    }
+
+    #[test]
+    fn body_pose_forwards_to_the_rigid_state() {
+        let mut body = Body::ball(1.0, 0.5);
+        body.rigid.position = [1.0, 2.0, 3.0];
+        assert_eq!(body.pose(), body.rigid.pose());
     }
 
     #[test]
