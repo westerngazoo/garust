@@ -104,6 +104,15 @@ parameter, and return `m0.slerp(&m1, s)`. Everything else — arcs,
 spirals, screws — falls out of *which motors* the keys hold, because the
 interpolant is always the geodesic screw between them.
 
+Two properties of `slerp` shape track authoring and evaluation: it is a
+principal-branch interpolant — each span takes the **short way** and can
+sweep at most a **half turn (τ/2)** of rotation, so larger sweeps must be
+subdivided across keys (or wound explicitly with
+`Motor::slerp_unwrapped`) — and a span's screw generator is constant, so
+the evaluator should compute `Motor::screw_generator` once per span and
+evaluate frames with `Motor::slerp_from_generator` rather than paying
+for the logarithm every frame.
+
 ### 3.3 Frame sinks
 
 ```rust
@@ -145,11 +154,21 @@ use std::f64::consts::TAU;
 let mut scene = Scene::new(4.0);                    // 4 seconds
 
 // A square that travels a full screw: one turn about z while rising.
-let screw_end = Motor::translator(0.0, 0.0, 2.0)
-              * Motor::rotor(TAU, Pga3::basis(0b0011));
+// One span cannot author this (§3.2): slerp takes the short way, a τ
+// rotor is the versor −1, and the span would collapse to the identity.
+// Subdivide instead — four quarter-turn keys, each span τ/4 of rotation,
+// comfortably under the τ/2 per-span ceiling.
+let screw_key = |i: f64| Motor::translator(0.0, 0.0, 0.5 * i)
+              * Motor::rotor(i * TAU / 4.0, Pga3::basis(0b0011));
 scene.add(
     Object::polyline(square(1.0))
-        .track(Track::keys([(0.0, Motor::identity()), (4.0, screw_end)])
+        .track(Track::keys([
+            (0.0, screw_key(0.0)),
+            (1.0, screw_key(1.0)),
+            (2.0, screw_key(2.0)),
+            (3.0, screw_key(3.0)),
+            (4.0, screw_key(4.0)),
+        ])
         .ease(Ease::SmootherStep)),
 );
 

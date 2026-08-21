@@ -60,6 +60,18 @@ prop_compose! {
 }
 
 prop_compose! {
+    // A random rigid motion whose rotor stays below the half-turn fold
+    // (θ < τ/2), so the versor has ⟨M⟩₀ > 0 and `log` is exactly
+    // invertible on the versor, not just on the motion.
+    fn below_fold_motor()(
+        dx in -2.0f64..2.0, dy in -2.0f64..2.0, dz in -2.0f64..2.0,
+        angle in 0.0f64..3.0, axis in 0usize..3,
+    ) -> Motor3 {
+        Motor::translator(dx, dy, dz) * Motor::rotor(angle, pga_axis(axis))
+    }
+}
+
+prop_compose! {
     // A random conformal map: a dilation, then a rotation, then a
     // translation, all about the origin.
     fn any_conformal()(
@@ -194,6 +206,59 @@ proptest! {
     ) {
         let b = Motor::bezier(&[m1, m2, m3, m4], t);
         prop_assert!((b.norm_squared() - 1.0).abs() < 1e-9);
+    }
+
+    // --- Motor::exp / Motor::log round trips -----------------------------
+
+    // exp inverts log exactly on the versor while the rotation stays below
+    // the τ/2 fold — for translators, rotors, and general screws alike...
+    #[test]
+    fn motor_exp_inverts_log_on_the_versor_below_the_fold(m in below_fold_motor()) {
+        prop_assert!(close(&Motor::exp(m.log()).versor(), &m.versor()));
+    }
+
+    // ...and as a *motion* everywhere, the versor's sign being
+    // unobservable in the sandwich.
+    #[test]
+    fn motor_exp_inverts_log_as_a_motion(
+        m in any_motor(), x in coord(), y in coord(), z in coord(),
+    ) {
+        let p = Pga3::point(x, y, z);
+        prop_assert!(close(&Motor::exp(m.log()).apply(&p), &m.apply(&p)));
+    }
+
+    // --- Generator-cached slerp (log once per span) -----------------------
+
+    // Caching the span generator must not change the curve: bit-for-bit
+    // equality with slerp, for every t including extrapolation.
+    #[test]
+    fn slerp_from_generator_matches_slerp_exactly(
+        a in any_motor(), b in any_motor(), t in -0.5f64..1.5,
+    ) {
+        let gen = a.screw_generator(&b);
+        prop_assert_eq!(a.slerp_from_generator(&gen, t), a.slerp(&b, t));
+    }
+
+    // --- slerp_unwrapped -------------------------------------------------
+
+    // Winding must be invisible at the end of the span: whatever the turn
+    // count, t = 1 still lands on `b` as a motion, because a full turn
+    // about any line is the identity motion.
+    #[test]
+    fn slerp_unwrapped_hits_the_endpoint_for_any_turn_count(
+        a in any_motor(), b in any_motor(), k in -2i32..3,
+        x in coord(), y in coord(), z in coord(),
+    ) {
+        let p = Pga3::point(x, y, z);
+        prop_assert!(close(&a.slerp_unwrapped(&b, 1.0, k).apply(&p), &b.apply(&p)));
+    }
+
+    // Zero extra turns takes the untouched fast path: slerp, bit for bit.
+    #[test]
+    fn slerp_unwrapped_zero_turns_is_slerp(
+        a in any_motor(), b in any_motor(), t in -0.5f64..1.5,
+    ) {
+        prop_assert_eq!(a.slerp_unwrapped(&b, t, 0), a.slerp(&b, t));
     }
 
     // --- Kinematic chains (RFC-013 R2/R3) --------------------------------

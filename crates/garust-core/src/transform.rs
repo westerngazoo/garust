@@ -303,6 +303,40 @@ impl<A: Algebra, T: Real> Multivector<A, T> {
     /// `⟨self⟩₀ ≥ 0`; the returned bivector is the *short way* — exactly
     /// what motor blending wants (cf. quaternion slerp's sign flip).
     ///
+    /// # Principal branch, concretely
+    ///
+    /// The fold puts each recovered elliptic factor's half-angle in
+    /// `[0, τ/4]` — a rotor's recovered rotation never exceeds a **half
+    /// turn (τ/2)**, whatever was exponentiated:
+    ///
+    /// - `exp(−θ/2·B̂)` with `θ < τ/2` logs back to `−θ/2·B̂` exactly;
+    /// - for `τ/2 < θ < τ` the log is the complementary rotation the
+    ///   short way around, `+(τ−θ)/2·B̂` — direction *reversed* — so
+    ///   `θ = τ − ε` logs as a small bivector, not an almost-full turn;
+    /// - a full turn is invisible: `exp(−(τ/2)·B̂) = −1` folds to `+1`,
+    ///   whose log is `0` (a slerp toward it degenerates to a constant);
+    /// - at `θ = τ/2` exactly, `⟨R⟩₀ = 0` up to rounding dust and
+    ///   `±B̂` are equally principal: the branch lands on the side named
+    ///   by the floating-point signs of the folded versor's bivector
+    ///   coefficients (the `atan2(m, c ≈ 0)` quarter-turn limit of
+    ///   the per-factor rescale).
+    ///
+    /// Interpolation built on this log (`Motor::slerp` in `garust-geo`)
+    /// therefore sweeps at most τ/2 of rotation per span; see that
+    /// method for the animation-facing consequences and escape hatches.
+    ///
+    /// ```
+    /// use garust_core::Vga3;
+    /// use std::f64::consts::TAU;
+    /// let e12 = Vga3::basis(3);
+    /// // Below the fold the log is exact...
+    /// let r = (e12 * (-1.0 / 2.0)).exp();
+    /// assert!((r.log() + e12 * 0.5).norm() < 1e-12);
+    /// // ...but a full turn folds to nothing: exp(−(τ/2)·e12) = −1.
+    /// let full = (e12 * (-TAU / 2.0)).exp();
+    /// assert!(full.log().norm() < 1e-9);
+    /// ```
+    ///
     /// The recovery mirrors the exponential's invariant split: writing
     /// `R = (c₁ + S₁)(c₂ + S₂)` over commuting simple bivectors,
     /// `⟨R⟩₂ = c₂S₁ + c₁S₂` splits into `W₁ + W₂` by
