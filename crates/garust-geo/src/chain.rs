@@ -34,7 +34,7 @@
 //! ```
 
 use crate::Motor;
-use garust_core::{Pga3, Real};
+use garust_core::Pga3;
 
 /// Maximum number of links a [`Chain`] may hold (stack-scratch bound).
 pub const MAX_LINKS: usize = 16;
@@ -218,10 +218,12 @@ impl<'a> Chain<'a> {
             let mut a = [[0.0_f64; 6]; 6];
             for i in 0..6 {
                 for k in 0..6 {
-                    let mut s = 0.0;
-                    for j in 0..n {
-                        s += jac[i][j] * jac[k][j];
-                    }
+                    // Row-wise dot product of the two Jacobian rows.
+                    let s: f64 = jac[i][..n]
+                        .iter()
+                        .zip(&jac[k][..n])
+                        .map(|(x, y)| x * y)
+                        .sum();
                     a[i][k] = s;
                 }
                 a[i][i] += lambda2;
@@ -263,8 +265,11 @@ fn solve6(mut a: [[f64; 6]; 6], mut b: [f64; 6]) -> [f64; 6] {
             if f == 0.0 {
                 continue;
             }
-            for k in col..6 {
-                a[row][k] -= f * a[col][k];
+            // Split so the pivot row and the target row borrow disjointly,
+            // then subtract the scaled pivot tail element-wise.
+            let (upper, lower) = a.split_at_mut(row);
+            for (t, p) in lower[0][col..].iter_mut().zip(&upper[col][col..]) {
+                *t -= f * p;
             }
             b[row] -= f * b[col];
         }

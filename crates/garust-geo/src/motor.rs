@@ -146,9 +146,9 @@ impl<T: Scalar> Motor<T> {
     /// ```
     pub fn from_unit_quaternion(w: T, x: T, y: T, z: T) -> Self {
         let mut v = Pga::<T>::zero();
-        v.coeffs[0] = w;  // scalar
+        v.coeffs[0] = w; // scalar
         v.coeffs[6] = -x; // e23 (sign matches exp(-θ/2·e23) convention)
-        v.coeffs[5] = y;  // e13 (e13 plane is reversed relative to e23/e12)
+        v.coeffs[5] = y; // e13 (e13 plane is reversed relative to e23/e12)
         v.coeffs[3] = -z; // e12 (sign matches exp(-θ/2·e12) convention)
         Self { versor: v }
     }
@@ -1271,7 +1271,9 @@ mod tests {
         let half = TAU / 8.0; // θ = 90°  →  cos(π/4), sin(π/4)
         let c = half.cos();
         let s = half.sin();
-        let cases: &[(f64, f64, f64, f64, [f64; 3], [f64; 3])] = &[
+        /// `(w, x, y, z, input direction, expected rotated direction)`.
+        type QuatCase = (f64, f64, f64, f64, [f64; 3], [f64; 3]);
+        let cases: &[QuatCase] = &[
             // rotation about x-axis 90°: e_y → e_z
             (c, s, 0.0, 0.0, [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]),
             // rotation about y-axis 90°: e_z → e_x
