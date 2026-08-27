@@ -374,14 +374,8 @@ fn solve_ball_socket(
     let wb = world_anchor(bodies, b, anchor_b);
     let err = jsub(wb, wa); // should be [0,0,0] when satisfied
 
-    for axis in 0..3_usize {
-        let n: [f64; 3] = if axis == 0 {
-            [1.0, 0.0, 0.0]
-        } else if axis == 1 {
-            [0.0, 1.0, 0.0]
-        } else {
-            [0.0, 0.0, 1.0]
-        };
+    const BASIS: [[f64; 3]; 3] = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+    for (&n, &err_axis) in BASIS.iter().zip(err.iter()) {
 
         // Relative velocity at the constraint point along this axis
         let vel_b = if b == STATIC { [0.0; 3] } else { body_vel_at(&bodies[b], wb) };
@@ -399,7 +393,7 @@ fn solve_ball_socket(
         }
 
         // Impulse: velocity correction + Baumgarte position bias
-        let bias = baumgarte / dt * err[axis];
+        let bias = baumgarte / dt * err_axis;
         let lambda = -(v_rel + bias) / inv_total;
 
         apply_joint_impulse(bodies, b, n, lambda, wb);
@@ -412,16 +406,19 @@ fn solve_ball_socket(
 /// two directions perpendicular to the world-frame axis get the same
 /// velocity-plus-Baumgarte treatment as [`solve_ball_socket`]; the axis
 /// direction itself is left unconstrained.
-fn solve_prismatic(
-    bodies: &mut [Body],
+/// The fixed geometry of a prismatic joint: which bodies, where they are
+/// anchored, and the slide axis. Grouped because these five always travel
+/// together and never change during a solve.
+struct PrismaticGeom {
     a: usize,
     b: usize,
     anchor_a: [f64; 3],
     anchor_b: [f64; 3],
     axis: [f64; 3],
-    dt: f64,
-    baumgarte: f64,
-) {
+}
+
+fn solve_prismatic(bodies: &mut [Body], g: &PrismaticGeom, dt: f64, baumgarte: f64) {
+    let PrismaticGeom { a, b, anchor_a, anchor_b, axis } = *g;
     let wa = world_anchor(bodies, a, anchor_a);
     // World-frame axis: transform a second anchor offset by `axis` and
     // subtract — reuses the point path, so it is uniform over `STATIC`.
@@ -482,7 +479,8 @@ fn solve_joints(bodies: &mut [Body], joints: &[Joint], dt: f64) {
                     solve_ball_socket(bodies, a, b, anchor_a, anchor_b, dt, BAUMGARTE);
                 }
                 Joint::Prismatic { a, b, anchor_a, anchor_b, axis } => {
-                    solve_prismatic(bodies, a, b, anchor_a, anchor_b, axis, dt, BAUMGARTE);
+                    let geom = PrismaticGeom { a, b, anchor_a, anchor_b, axis };
+                    solve_prismatic(bodies, &geom, dt, BAUMGARTE);
                 }
             }
         }
