@@ -194,7 +194,11 @@ impl<'a> Chain<'a> {
         let mut err = 0.0_f64;
         for iter in 0..params.max_iter {
             let e = self.error_twist(&q[..n], target);
-            err = e.iter().map(|x| x * x).sum::<f64>().sqrt();
+            // Qualified: `f64::sqrt` is a std inherent method, absent in
+            // no_std builds — and a `use garust_core::Real` import is dead
+            // code whenever std IS linked, so clippy strips it (that
+            // exact removal broke the libm build once already).
+            err = garust_core::Real::sqrt(e.iter().map(|x| x * x).sum::<f64>());
             if err < params.tol {
                 out.copy_from_slice(&q[..n]);
                 return IkResult { converged: true, iters: iter, err };
