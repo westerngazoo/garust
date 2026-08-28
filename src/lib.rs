@@ -178,6 +178,18 @@ pub use garust_physics as physics;
 #[doc(inline)]
 pub use garust_physics::{Inertia, RigidBody};
 
+// --- Optional motor-native animation (the `anim` feature) -----------------
+/// Keyframe animation on the motor manifold — tracks of `(time, Motor)`
+/// keys sampled by cached-generator screw interpolation, with easing as
+/// pure time remapping. Available under the `anim` feature
+/// (`garust = { version = "…", features = ["anim"] }`); see RFC-012.
+#[cfg(feature = "anim")]
+#[doc(inline)]
+pub use garust_anim as anim;
+#[cfg(feature = "anim")]
+#[doc(inline)]
+pub use garust_anim::{Ease, Track};
+
 // The signature-minting macro. `#[macro_export]` puts it at the
 // `garust_core` root; re-export it so downstream crates can write
 // `garust::define_algebra!` (the macro's `$crate` paths still resolve
