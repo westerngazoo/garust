@@ -1,0 +1,28 @@
+[package]
+name = "garust-anim"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Motor-native animation on the garust PGA kernel: keyframe tracks, easing, and screw-path evaluation."
+readme = "README.md"
+license.workspace = true
+repository.workspace = true
+keywords = ["geometric-algebra", "animation", "keyframes", "pga", "motor"]
+categories = ["mathematics", "graphics"]
+
+[features]
+default = ["std"]
+# The animation layer requires std (heap-backed tracks now, frame I/O in
+# later milestones); the feature forwards the math backend to the kernel
+# and geometry layers.
+std = ["garust-core/std", "garust-geo/std"]
+
+[dependencies]
+# Inherit `default-features = false` from `[workspace.dependencies]`, so this
+# crate's `std` feature picks the members' math backend.
+garust-core = { workspace = true }
+garust-geo = { workspace = true }
+
+[dev-dependencies]
+# Property-based keyframe/easing law tests; dev-only, never in the normal graph.
+proptest = { workspace = true }
