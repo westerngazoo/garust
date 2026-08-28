@@ -37,6 +37,9 @@
 
 #![deny(missing_docs)]
 
+pub mod scene;
+pub use scene::{Camera, Object, ObjectId, Prim2, Projection, Scene, Shape, Style};
+
 use garust_core::Pga3;
 use garust_geo::{Motor, Motor3};
 
