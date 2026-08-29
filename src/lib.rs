@@ -74,6 +74,9 @@
 //! - typed PGA geometry in [`pga`]: [`pga::Point`], [`pga::Line`],
 //!   [`pga::Plane`] with type-checked join/meet incidence
 //!   (`a.meet(&b).meet(&c)`, `a.join(&b).join(&c)`)
+//! - open kinematic chains in [`chain`]: screw-axis joints, forward
+//!   kinematics as a single motor product, and damped-least-squares
+//!   inverse kinematics (RFC-013)
 //! - CGA geometric constructors for `Cl(4,1,0)`: `cga_point`, `sphere`,
 //!   `cga_plane`, on the null-cone conformal model
 //! - [`Conformal`] — conformal transformations in CGA (translators,
@@ -139,9 +142,11 @@ pub use garust_core::{
 };
 // `pga` and `cga` come from the geometry layer: each bundles that model's
 // typed objects (Point/Line/Plane, Point/Sphere/Plane), and `pga` also
-// re-exports the kernel's PGA-aware Display adapter.
+// re-exports the kernel's PGA-aware Display adapter. `chain` is the
+// kinematic layer on top of `Motor`: screw-axis joints, forward
+// kinematics as a motor product, and damped-least-squares IK (RFC-013).
 #[doc(no_inline)]
-pub use garust_geo::{cga, conformal, motor, pga};
+pub use garust_geo::{cga, chain, conformal, motor, pga};
 
 // --- The kernel: traits, the multivector, signatures, and aliases --------
 #[doc(inline)]
@@ -172,6 +177,18 @@ pub use garust_physics as physics;
 #[cfg(feature = "physics")]
 #[doc(inline)]
 pub use garust_physics::{Inertia, RigidBody};
+
+// --- Optional motor-native animation (the `anim` feature) -----------------
+/// Keyframe animation on the motor manifold — tracks of `(time, Motor)`
+/// keys sampled by cached-generator screw interpolation, with easing as
+/// pure time remapping. Available under the `anim` feature
+/// (`garust = { version = "…", features = ["anim"] }`); see RFC-012.
+#[cfg(feature = "anim")]
+#[doc(inline)]
+pub use garust_anim as anim;
+#[cfg(feature = "anim")]
+#[doc(inline)]
+pub use garust_anim::{Ease, Track};
 
 // The signature-minting macro. `#[macro_export]` puts it at the
 // `garust_core` root; re-export it so downstream crates can write

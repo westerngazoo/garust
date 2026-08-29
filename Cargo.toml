@@ -41,6 +41,9 @@ simd = ["garust-geo/simd"]
 # Opt-in rigid-body physics (the `garust-physics` crate, re-exported as
 # `garust::physics`). Off by default so the umbrella stays dependency-free.
 physics = ["dep:garust-physics"]
+# Opt-in motor-native animation (the `garust-anim` crate, re-exported as
+# `garust::anim`). Off by default; requires std. See RFC-012.
+anim = ["dep:garust-anim", "garust-anim/std"]
 
 [dependencies]
 # Inherit `default-features = false` from `[workspace.dependencies]`, so the
@@ -49,6 +52,8 @@ garust-core = { workspace = true }
 garust-geo = { workspace = true }
 # Optional rigid-body layer, behind the `physics` feature.
 garust-physics = { workspace = true, optional = true }
+# Optional animation layer, behind the `anim` feature.
+garust-anim = { workspace = true, optional = true }
 
 [workspace]
 members = [
@@ -56,6 +61,7 @@ members = [
     "crates/garust-geo",
     "crates/garust-derive",
     "crates/garust-physics",
+    "crates/garust-anim",
 ]
 
 [workspace.package]
@@ -73,6 +79,7 @@ garust-core = { version = "0.1.0", path = "crates/garust-core", default-features
 garust-geo = { version = "0.1.0", path = "crates/garust-geo", default-features = false }
 garust-derive = { version = "0.1.0", path = "crates/garust-derive" }
 garust-physics = { version = "0.1.0", path = "crates/garust-physics", default-features = false }
+garust-anim = { version = "0.1.0", path = "crates/garust-anim", default-features = false }
 
 # Proc-macro toolchain — pulled in only when the optional `derive` feature
 # is enabled, so the default build stays dependency-free.

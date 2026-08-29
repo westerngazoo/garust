@@ -21,6 +21,7 @@ use core::ops::Mul;
 
 use garust_core::multivector::Multivector;
 use garust_core::scalar::{Real, Scalar};
+use garust_core::signature::grade_of;
 use garust_core::Pga3Sig;
 
 /// The PGA multivector type a [`Motor`] wraps: `Cl(3, 0, 1)` over `T`.
@@ -197,6 +198,138 @@ impl Motor<f64> {
     pub fn apply_each_simd(&self, xs: &mut [Pga<f64>]) {
         crate::simd::sandwich_each_pga(&self.versor, xs);
     }
+
+    /// Fast single-point sandwich kernel, klein-style.
+    ///
+    /// Computes `M · p · M̃` analytically — no 16×16 Cayley table traversal.
+    /// Exploits the fact that the motor has 8 non-zero coefficients and a point
+    /// has 4, reducing the double-product to closed-form rotation + translation
+    /// formulas followed by a single `f64x4` matrix-column FMA step.
+    ///
+    /// **Precondition**: `self` must be a unit motor (`norm() ≈ 1`).
+    ///
+    /// The result is identical to
+    /// ```ignore
+    /// let p = Pga3::point(pt[0], pt[1], pt[2]);
+    /// let [x, y, z] = Motor::apply_then_extract_xyz(&m, p);
+    /// ```
+    /// but bypasses the general table-driven path.
+    ///
+    /// # Motor coefficient layout (non-zero even-grade blades)
+    ///
+    /// | blade  | index | symbol |
+    /// |--------|-------|--------|
+    /// | scalar | 0     | a      |
+    /// | e12    | 3     | b      |
+    /// | e13    | 5     | c      |
+    /// | e23    | 6     | d      |
+    /// | e01    | 9     | e      |
+    /// | e02    | 10    | f      |
+    /// | e03    | 12    | g      |
+    /// | e0123  | 15    | h      |
+    pub fn apply_point_fast(&self, pt: [f64; 3]) -> [f64; 3] {
+        use wide::f64x4;
+        let v = &self.versor.coeffs;
+        let (a, b, c, d) = (v[0], v[3], v[5], v[6]);
+        let (e, f, g, h) = (v[9], v[10], v[12], v[15]);
+        let (px, py, pz) = (pt[0], pt[1], pt[2]);
+
+        // Quadratic terms of the rotor part.
+        let (aa, bb, cc, dd) = (a * a, b * b, c * c, d * d);
+        let (ab, ac, ad) = (a * b, a * c, a * d);
+        let (bc, bd, cd) = (b * c, b * d, c * d);
+
+        // Cross-terms with the dual (translation) part.
+        let (ae, bf, cg, dh) = (a * e, b * f, c * g, d * h);
+        let (be, af, dg, ch) = (b * e, a * f, d * g, c * h);
+        let (ce, df, ga, bh) = (c * e, d * f, g * a, b * h);
+
+        // Rotation matrix (unit-quaternion formula with q=(a,-d,c,-b)).
+        let r00 = aa - bb - cc + dd;
+        let r01 = 2.0 * (ab - cd);
+        let r02 = 2.0 * (ac + bd);
+        let r10 = -2.0 * (ab + cd);
+        let r11 = aa - bb + cc - dd;
+        let r12 = 2.0 * (ad - bc);
+        let r20 = 2.0 * (bd - ac);
+        let r21 = -2.0 * (ad + bc);
+        let r22 = aa + bb - cc - dd;
+
+        // Translation vector extracted from the dual bivector components.
+        // Derived from t = 2·q_d·q̄_r using the motor ↔ dual-quaternion map,
+        // where q_r = (a,-d,c,-b) and q_d = (h,e,f,g) for blade-indexed
+        // motor coeffs (e01→e, e02→f, e03→g, e0123→h).
+        let tx = 2.0 * (ae + bf + cg + dh);
+        let ty = 2.0 * (af - be + dg - ch);
+        let tz = 2.0 * (ga + bh - ce - df);
+
+        // Matrix-column FMA: result = col0*px + col1*py + col2*pz + col3.
+        // Packs (x', y', z', w'=1) into one f64x4 with no horizontal adds.
+        let col0 = f64x4::from([r00, r10, r20, 0.0]);
+        let col1 = f64x4::from([r01, r11, r21, 0.0]);
+        let col2 = f64x4::from([r02, r12, r22, 0.0]);
+        let col3 = f64x4::from([tx, ty, tz, 1.0]);
+
+        let result = col0 * f64x4::splat(px)
+            + col1 * f64x4::splat(py)
+            + col2 * f64x4::splat(pz)
+            + col3;
+
+        let arr = result.to_array();
+        [arr[0], arr[1], arr[2]]
+    }
+}
+
+#[cfg(feature = "simd")]
+impl Motor<f32> {
+    /// SIMD batch apply: transform every PGA object in `xs` in place, eight
+    /// objects per `f32x8` vector (structure-of-arrays). Behind the `simd`
+    /// feature; bit-faithful to [`Motor::apply_each`] (tail uses scalar path),
+    /// with ~2× the throughput of the `f64` path on 256-bit SIMD hardware.
+    pub fn apply_each_simd(&self, xs: &mut [Pga<f32>]) {
+        crate::simd::sandwich_each_pga_f32(&self.versor, xs);
+    }
+}
+
+impl Motor<f64> {
+    /// Fréchet (Riemannian) mean of a non-empty slice of motors.
+    ///
+    /// Iterates until the tangent-space residual norm drops below `tol`
+    /// or `max_iter` is reached. Typical values: tol=1e-8, max_iter=20.
+    ///
+    /// # Panics
+    /// Panics if `motors` is empty.
+    pub fn frechet_mean(motors: &[Self], tol: f64, max_iter: usize) -> Self {
+        assert!(
+            !motors.is_empty(),
+            "frechet_mean: motors slice cannot be empty"
+        );
+        let mut mu = motors[0];
+        let n = motors.len() as f64;
+        let n_inv = 1.0 / n;
+        for _ in 0..max_iter {
+            let mut b_bar = Pga::<f64>::zero();
+            let mu_inv = mu.inverse();
+            for m in motors {
+                b_bar += mu_inv.compose(m).log();
+            }
+            b_bar = b_bar * n_inv;
+            if b_bar.norm() < tol {
+                break;
+            }
+            mu = mu.compose(&Self::from_versor(b_bar.exp()));
+        }
+        mu
+    }
+
+    /// Geodesic (bi-invariant) distance between two motors on the motor
+    /// manifold.
+    ///
+    /// Defined as `‖log(self⁻¹ ∘ other)‖`. Returns 0 when `self == other`
+    /// as motions, and is symmetric and satisfies the triangle inequality.
+    pub fn geodesic_distance(&self, other: &Self) -> f64 {
+        self.inverse().compose(other).log().norm()
+    }
 }
 
 impl<T: Real> Motor<T> {
@@ -289,6 +422,44 @@ impl<T: Real> Motor<T> {
         self.versor.log()
     }
 
+    /// Exponential of a **screw bivector** — the inverse of
+    /// [`log`](Motor::log), mapping Lie-algebra coordinates back to the
+    /// motor: `Motor::exp(m.log())` reproduces `m` whenever `⟨m⟩₀ ≥ 0`,
+    /// and `−m` — the same motion — otherwise (the log folds that sign
+    /// away; see [`Multivector::log`](garust_core::Multivector::log)).
+    ///
+    /// # Generator contract
+    ///
+    /// `b` must be a PGA **bivector** (grade 2 only, debug-asserted): a
+    /// Euclidean plane gives a rotor, a null (`e0`-containing) plane a
+    /// translator, and a mixed screw bivector — anything
+    /// [`log`](Motor::log) can return — a general screw motion. For such
+    /// generators the result is always a unit motor. Anything else
+    /// exponentiates fine in the kernel but is not a rigid motion, so it
+    /// has no business being wrapped in a [`Motor`].
+    ///
+    /// This is [`Multivector::exp`](garust_core::Multivector::exp) +
+    /// [`Motor::from_versor`] with the contract stated once, so
+    /// log-space code (blending, filtering, integration) never has to
+    /// leak the raw kernel type.
+    ///
+    /// ```
+    /// use garust_geo::Motor;
+    /// use garust_core::Pga3;
+    /// let m = Motor::rotor(1.1, Pga3::basis(0b0110)) * Motor::translator(0.5, 0.0, -2.0);
+    /// let back = Motor::exp(m.log());
+    /// for i in 0..16 {
+    ///     assert!((back.versor().coeffs[i] - m.versor().coeffs[i]).abs() < 1e-12);
+    /// }
+    /// ```
+    pub fn exp(b: Pga<T>) -> Self {
+        debug_assert!(
+            (0..16).all(|i| grade_of(i) == 2 || b.coeffs[i] == T::ZERO),
+            "Motor::exp: the generator must be a screw bivector (grade 2)",
+        );
+        Self { versor: b.exp() }
+    }
+
     /// Smooth screw interpolation between two motors — the motor "slerp".
     ///
     /// `t = 0` gives `self`, `t = 1` gives `other` (as motions; the versor
@@ -299,77 +470,191 @@ impl<T: Real> Motor<T> {
     /// M(t) = exp(t · log(other ∘ self⁻¹)) ∘ self
     /// ```
     ///
-    /// Because [`log`](Motor::log) folds the versor sign, the path takes
-    /// the short way around — the motor analogue of quaternion slerp's
-    /// antipodal flip. `t` outside `[0, 1]` extrapolates along the same
-    /// screw.
+    /// `t` outside `[0, 1]` extrapolates along the same screw. Evaluating
+    /// many `t` on one span? Cache the log once with
+    /// [`screw_generator`](Motor::screw_generator) and replay it with
+    /// [`slerp_from_generator`](Motor::slerp_from_generator).
+    ///
+    /// # Short-way fold: one span carries at most τ/2 of rotation
+    ///
+    /// Because [`log`](Motor::log) folds the versor sign (the motor
+    /// analogue of quaternion slerp's antipodal flip), the path always
+    /// takes the **short way**, and the rotation swept by a single span
+    /// is capped at a **half turn**. Concretely, interpolating from the
+    /// identity to `rotor(θ, plane)`:
+    ///
+    /// - **θ < τ/2** — sweeps forward by `θ`, as expected.
+    /// - **θ = τ/2 exactly** — both ways around are equally short; the
+    ///   direction is a floating-point tie-break on the versor's
+    ///   coefficient signs (`⟨R⟩₀ = 0` up to rounding dust). In practice
+    ///   it lands on the authored direction — pinned by test, not a
+    ///   geometric guarantee.
+    /// - **τ/2 < θ < τ** — sweeps *backwards* by `τ − θ`: the pose at
+    ///   `t = 1` is still right, but `θ = τ − ε` plays as a small
+    ///   reverse rotation, not an almost-full forward turn.
+    /// - **θ = τ** — `rotor(τ, plane)` is the identity motion carried by
+    ///   the versor `−1`; the fold erases it and the span **collapses**:
+    ///   every `t` returns (numerically) `self`.
+    ///
+    /// To *sweep* more than the fold allows — a visible full turn, say —
+    /// author intermediate keys (quarter-turn steps leave a comfortable
+    /// margin) or wind the span deliberately with
+    /// [`slerp_unwrapped`](Motor::slerp_unwrapped).
+    ///
+    /// ```
+    /// use garust_geo::Motor;
+    /// use garust_core::Pga3;
+    /// use std::f64::consts::TAU;
+    /// let id = Motor::<f64>::identity();
+    /// // A τ target collapses: the "midpoint" is still the identity...
+    /// let full = Motor::rotor(TAU, Pga3::basis(0b0011));
+    /// assert!(id.slerp(&full, 0.5).geodesic_distance(&id) < 1e-9);
+    /// // ...while τ/2 − ε interpolates forward as expected.
+    /// let theta = TAU / 2.0 - 1e-3;
+    /// let near = Motor::rotor(theta, Pga3::basis(0b0011));
+    /// let mid = Motor::rotor(theta / 2.0, Pga3::basis(0b0011));
+    /// assert!(id.slerp(&near, 0.5).geodesic_distance(&mid) < 1e-9);
+    /// ```
     pub fn slerp(&self, other: &Self, t: T) -> Self {
-        let delta = (other.versor * self.versor.versor_inverse()).log();
+        self.slerp_from_generator(&self.screw_generator(other), t)
+    }
+
+    /// The **span generator** of the screw from `self` to `other`: the
+    /// bivector `log(other ∘ self⁻¹)` that [`slerp`](Motor::slerp)
+    /// exponentiates. Computing it is the expensive half of a slerp (a
+    /// bivector split plus several dense 16×16 product traversals), and
+    /// it is *constant over a keyframe span* — so an animation track can
+    /// pay for it once per span and evaluate frames with
+    /// [`slerp_from_generator`](Motor::slerp_from_generator), instead of
+    /// re-deriving it every frame inside [`slerp`](Motor::slerp).
+    ///
+    /// `a.slerp_from_generator(&a.screw_generator(&b), t)` returns
+    /// exactly — bit for bit — what `a.slerp(&b, t)` returns (`slerp` is
+    /// literally that composition). The generator inherits `log`'s
+    /// principal branch, so the span it encodes takes the short way and
+    /// carries at most τ/2 of rotation; see [`slerp`](Motor::slerp).
+    pub fn screw_generator(&self, other: &Self) -> Pga<T> {
+        (other.versor * self.versor.versor_inverse()).log()
+    }
+
+    /// Evaluate the screw interpolation from `self` along a precomputed
+    /// span generator: `exp(t·gen) ∘ self`, the cheap half of
+    /// [`slerp`](Motor::slerp) with the
+    /// [`screw_generator`](Motor::screw_generator) factored out.
+    ///
+    /// `gen` must be the generator of a span *starting at `self`*
+    /// (normally `self.screw_generator(&other)`, cached while the span
+    /// lasts); pairing it with any other start motor evaluates some
+    /// other screw entirely. `t = 0` gives `self`, `t = 1` the span's
+    /// end, and `t` outside `[0, 1]` extrapolates — exactly as in
+    /// [`slerp`](Motor::slerp).
+    pub fn slerp_from_generator(&self, gen: &Pga<T>, t: T) -> Self {
         Self {
-            versor: (delta * t).exp() * self.versor,
+            versor: (*gen * t).exp() * self.versor,
         }
     }
-}
 
-/// f64-specific methods that require concrete float operations.
-impl Motor<f64> {
-    /// Fréchet (Riemannian) mean of a non-empty slice of motors.
+    /// [`slerp`](Motor::slerp) with `extra_turns` additional full turns
+    /// wound about the span's screw axis — the escape hatch from the
+    /// short-way fold for animation that must *sweep* a large rotation
+    /// rather than merely arrive at one.
     ///
-    /// Computes the Riemannian centroid via gradient descent on the motor
-    /// manifold: at each step, log each motor to the current estimate's
-    /// tangent space, average there, and retract back with exp. Converges
-    /// when the tangent-space residual norm drops below `tol`.
+    /// The span generator is the same principal log that `slerp` uses;
+    /// its elliptic (rotation) part is extended by `extra_turns · τ/2`
+    /// of half-angle along its own unit bivector — the rotation about
+    /// the screw axis, wherever that axis lies. A full turn about any
+    /// line is the identity motion and the added term commutes with the
+    /// generator, so the endpoints are untouched: `t = 0` still gives
+    /// `self` and `t = 1` still gives `other` (as motions) while the
+    /// path between them winds the extra turns. Positive `extra_turns`
+    /// wind with the span's own rotation direction, negative against
+    /// it, and `extra_turns = 0` is exactly — bit for bit —
+    /// [`slerp`](Motor::slerp).
     ///
-    /// `tol = 1e-8` and `max_iter = 20` suit typical calibration clusters.
+    /// # Degenerate spans
+    ///
+    /// A span with no rotation — a pure translation, identical
+    /// rotations at both keys, or the τ-collapse where the fold leaves
+    /// only rotation dust (numerically: a half-angle at or below
+    /// `1e-9`) — has no canonical plane to wind around, so
+    /// `extra_turns` is **ignored** and the result equals
+    /// [`slerp`](Motor::slerp). Winding such a span is an authoring
+    /// decision: put the plane into the keys (e.g. subdivided
+    /// quarter-turn keyframes) instead.
+    ///
+    /// ```
+    /// use garust_geo::Motor;
+    /// use garust_core::Pga3;
+    /// use std::f64::consts::TAU;
+    /// let a = Motor::<f64>::identity();
+    /// let b = Motor::rotor(TAU / 4.0, Pga3::basis(0b0011));
+    /// // Half-way along the wound path: τ/8 plus half the extra turn.
+    /// let mid = a.slerp_unwrapped(&b, 0.5, 1);
+    /// let expect = Motor::rotor(TAU / 8.0 + TAU / 2.0, Pga3::basis(0b0011));
+    /// let p = Pga3::point(1.0, 0.0, 0.0);
+    /// let (got, want) = (mid.apply(&p), expect.apply(&p));
+    /// for i in 0..16 {
+    ///     assert!((got.coeffs[i] - want.coeffs[i]).abs() < 1e-9);
+    /// }
+    /// ```
+    pub fn slerp_unwrapped(&self, other: &Self, t: T, extra_turns: i32) -> Self {
+        let mut gen = self.screw_generator(other);
+        if extra_turns != 0 {
+            // A PGA screw bivector always splits into an elliptic part
+            // (the rotation about the screw axis, squaring to −φ² with
+            // φ the half-angle) plus a null translation part. `None`
+            // (isoclinic) cannot happen in Cl(3,0,1): ⟨B²⟩₀ = −|E|² ≤ 0
+            // and the grade-4 part of B² squares to 0, so the split's
+            // discriminant only degenerates when the Euclidean part
+            // vanishes — which it reports as "already simple" instead.
+            // Fall back to the unmodified span defensively all the same.
+            let (b1, b2) = gen
+                .try_bivector_split()
+                .unwrap_or((gen, Pga::<T>::zero()));
+            let (sq1, sq2) = ((b1 * b1).scalar_part(), (b2 * b2).scalar_part());
+            // The split's part order is arbitrary; the rotation is the
+            // part with the strictly negative square.
+            let (rot, sq) = if sq1 < sq2 { (b1, sq1) } else { (b2, sq2) };
+            let phi = if sq < T::ZERO { (-sq).sqrt() } else { T::ZERO };
+            if phi > T::from_f64(1e-9) {
+                let winds = T::from_f64(0.5 * core::f64::consts::TAU * f64::from(extra_turns));
+                gen += rot * (winds / phi);
+            }
+        }
+        self.slerp_from_generator(&gen, t)
+    }
+
+    /// Evaluate the **Bézier curve on the motor manifold** defined by the
+    /// control motors `ctrl` at parameter `t`, by de Casteljau over
+    /// [`slerp`](Motor::slerp): each round replaces adjacent control pairs
+    /// with their screw interpolant until one motor remains.
+    ///
+    /// Because every step is a geodesic blend of unit versors, the result
+    /// is a **unit motor at every `t`** — no renormalization needed — and
+    /// the endpoints are interpolated exactly (`t = 0` gives `ctrl[0]`,
+    /// `t = 1` gives `ctrl[n-1]` as motions). Like `slerp`, `t` outside
+    /// `[0, 1]` extrapolates. A single control motor is returned as-is;
+    /// two controls reduce to plain `slerp` (RFC-013 R1).
     ///
     /// # Panics
     ///
-    /// Panics if `motors` is empty.
-    ///
-    /// ```
-    /// use garust_geo::Motor;
-    /// let m = Motor::translator(1.0, 0.0, 0.0);
-    /// let mean = Motor::frechet_mean(&[m], 1e-8, 20);
-    /// // Mean of one motor is that motor.
-    /// assert!((mean.geodesic_distance(&m)) < 1e-12);
-    /// ```
-    pub fn frechet_mean(motors: &[Self], tol: f64, max_iter: usize) -> Self {
-        assert!(!motors.is_empty(), "frechet_mean: motors must be non-empty");
-        let n = motors.len() as f64;
-        let mut mu = motors[0];
-        for _ in 0..max_iter {
-            // Mean tangent vector at μ.
-            let mu_inv = mu.inverse();
-            let mut tangent = Pga::<f64>::zero();
-            for m in motors {
-                tangent += mu_inv.compose(m).log();
+    /// If `ctrl` is empty or holds more than 8 motors (fixed stack
+    /// scratch; cubic — 4 controls — is the working case).
+    pub fn bezier(ctrl: &[Self], t: T) -> Self {
+        assert!(
+            !ctrl.is_empty() && ctrl.len() <= 8,
+            "Motor::bezier takes 1..=8 control motors"
+        );
+        let mut buf = [Self::identity(); 8];
+        buf[..ctrl.len()].copy_from_slice(ctrl);
+        let mut n = ctrl.len();
+        while n > 1 {
+            for i in 0..n - 1 {
+                buf[i] = buf[i].slerp(&buf[i + 1], t);
             }
-            tangent = tangent * (1.0 / n);
-            if tangent.norm() < tol {
-                break;
-            }
-            mu = Motor::from_versor(tangent.exp()) * mu;
+            n -= 1;
         }
-        mu
-    }
-
-    /// Geodesic (bi-invariant) distance between two motors on the motor
-    /// manifold.
-    ///
-    /// Defined as `‖log(self⁻¹ ∘ other)‖`. Returns `0` when `self` and
-    /// `other` represent the same motion, and satisfies symmetry and the
-    /// triangle inequality.
-    ///
-    /// Depends on [`Motor::norm`] and [`Motor::log`]; see also issue #33
-    /// and #36 in the garust tracker.
-    ///
-    /// ```
-    /// use garust_geo::Motor;
-    /// let m = Motor::translator(1.0, 2.0, 3.0);
-    /// assert!((m.geodesic_distance(&m)).abs() < 1e-12);
-    /// ```
-    pub fn geodesic_distance(&self, other: &Self) -> f64 {
-        self.inverse().compose(other).log().norm()
+        buf[0]
     }
 }
 
@@ -391,6 +676,58 @@ mod tests {
         assert_eq!(a.len(), b.len());
         for (i, (&x, &y)) in a.iter().zip(b.iter()).enumerate() {
             assert!((x - y).abs() < tol, "index {i}: {x} vs {y}");
+        }
+    }
+
+    /// Assert two motors are the same *motion* (their action on a probe
+    /// point agrees) — the versor's overall sign is irrelevant.
+    fn same_motion(a: &Motor<f64>, b: &Motor<f64>, tol: f64) {
+        let p = Pga3::point(1.0, -0.5, 0.25);
+        approx_eq(&a.apply(&p).coeffs, &b.apply(&p).coeffs, tol);
+    }
+
+    #[test]
+    fn from_unit_quaternion_identity() {
+        let m = Motor::from_unit_quaternion(1.0, 0.0, 0.0, 0.0);
+        assert_eq!(m, Motor::identity());
+    }
+
+    #[test]
+    fn from_unit_quaternion_round_trip() {
+        // Test rotations of 90 degrees (tau/4) about x, y, and z axes
+        // The issue notes garust exp sign convention mapping.
+        // Motor::rotor(theta, plane) creates exp(-theta/2 * plane)
+        let s = std::f64::consts::FRAC_1_SQRT_2;
+        // In quat (w, x, y, z), a 90 deg rotation around x is w=cos(45)=s, x=sin(45)=s.
+        // from_unit_quaternion(s, s, 0, 0) maps to versor = s - s*e23.
+        // Motor::rotor(90 deg, e23) computes exp(-45 deg * e23) = cos(-45) + sin(-45)*e23 = s - s*e23.
+        let cases = [
+            (s, s, 0.0, 0.0, Motor::rotor(TAU / 4.0, Pga3::basis(0b0110))), // x-axis
+            (
+                s,
+                0.0,
+                s,
+                0.0,
+                Motor::rotor(TAU / 4.0, -Pga3::basis(0b0101)),
+            ), // y-axis
+            (s, 0.0, 0.0, s, Motor::rotor(TAU / 4.0, Pga3::basis(0b0011))), // z-axis
+            (
+                -s,
+                s,
+                0.0,
+                0.0,
+                Motor::rotor(-TAU / 4.0, Pga3::basis(0b0110)),
+            ), // -x-axis
+        ];
+
+        for (w, x, y, z, expected_m) in cases {
+            let m = Motor::from_unit_quaternion(w, x, y, z);
+            // compare their matrices to ensure they are the same rigid motion
+            let m_mat = m.to_matrix();
+            let exp_mat = expected_m.to_matrix();
+            for c in 0..4 {
+                approx_eq(&m_mat[c], &exp_mat[c], 1e-12);
+            }
         }
     }
 
@@ -438,6 +775,7 @@ mod tests {
         approx_eq(&moved.coeffs, &Pga3::point(3.0, -1.0, 2.0).coeffs, 1e-12);
     }
 
+
     #[test]
     fn rotor_about_x_axis_sends_y_to_z() {
         // 90° about the x-axis (e23 plane): (0,1,0) → (0,0,1).
@@ -458,6 +796,111 @@ mod tests {
     fn motors_are_unit_norm() {
         let m = Motor::translator(5.0, -2.0, 0.5) * Motor::rotor(1.23, Pga3::basis(0b0101));
         assert!((m.norm_squared() - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn norm_of_identity_and_rotor() {
+        assert!((Motor::<f64>::identity().norm() - 1.0).abs() < 1e-12);
+        let m = Motor::rotor(1.23, Pga3::basis(0b0101));
+        assert!((m.norm() - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn norm_squared_consistency() {
+        let m = Motor::translator(5.0, -2.0, 0.5) * Motor::rotor(1.23, Pga3::basis(0b0101));
+        let log_m = m.log();
+        assert!((log_m.norm().powi(2) - log_m.norm_squared()).abs() < 1e-12);
+    }
+
+    #[test]
+    fn frechet_mean_single() {
+        let m = Motor::translator(1.0, 2.0, 3.0) * Motor::rotor(0.5, Pga3::basis(0b0110));
+        let mean = Motor::frechet_mean(&[m], 1e-8, 20);
+        approx_eq(&mean.versor().coeffs, &m.versor().coeffs, 1e-12);
+    }
+
+    #[test]
+    fn frechet_mean_two_motors() {
+        let m1 = Motor::translator(1.0, 0.0, 0.0);
+        let m2 = Motor::translator(0.0, 2.0, 0.0) * Motor::rotor(0.8, Pga3::basis(0b0110));
+        let mean = Motor::frechet_mean(&[m1, m2], 1e-8, 20);
+        let slerp = m1.slerp(&m2, 0.5);
+
+        let p = Pga3::point(1.0, 1.0, 1.0);
+        approx_eq(&mean.apply(&p).coeffs, &slerp.apply(&p).coeffs, 1e-8);
+    }
+
+    #[test]
+    fn frechet_mean_subgroup() {
+        // N rotors in the same subgroup
+        let plane = Pga3::basis(0b0110);
+        let m1 = Motor::rotor(0.1, plane);
+        let m2 = Motor::rotor(0.5, plane);
+        let m3 = Motor::rotor(0.9, plane);
+        let mean = Motor::frechet_mean(&[m1, m2, m3], 1e-8, 20);
+        let expected = Motor::rotor((0.1 + 0.5 + 0.9) / 3.0, plane);
+        approx_eq(&mean.versor().coeffs, &expected.versor().coeffs, 1e-8);
+    }
+
+    #[test]
+    #[should_panic(expected = "motors slice cannot be empty")]
+    fn frechet_mean_panics_on_empty() {
+        let _: Motor<f64> = Motor::frechet_mean(&[], 1e-8, 20);
+    }
+
+    #[test]
+    fn geodesic_distance_properties() {
+        let a = Motor::translator(1.0, -2.0, 0.5) * Motor::rotor(0.9, Pga3::basis(0b0110));
+        let b = Motor::translator(0.0, 1.0, -1.0) * Motor::rotor(1.2, Pga3::basis(0b1010));
+        let c = Motor::translator(-1.0, 0.0, 2.0) * Motor::rotor(0.4, Pga3::basis(0b0011));
+
+        // Self-distance is 0
+        assert!(a.geodesic_distance(&a).abs() < 1e-12);
+
+        // Symmetric
+        assert!((a.geodesic_distance(&b) - b.geodesic_distance(&a)).abs() < 1e-12);
+
+        // Triangle inequality
+        assert!(
+            a.geodesic_distance(&c) <= a.geodesic_distance(&b) + b.geodesic_distance(&c) + 1e-12
+        );
+
+        // Angle on principal range
+        let theta = 0.5_f64;
+        let plane = Pga3::basis(0b0110);
+        let r = Motor::rotor(theta, plane);
+        let id = Motor::identity();
+        // Since rotor(theta, plane) builds exp(-theta/2 * plane),
+        // the log is -theta/2 * plane. The norm is theta/2.
+        assert!((id.geodesic_distance(&r) - theta / 2.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn renormalize_fixed_point_and_drift() {
+        let id = Motor::<f64>::identity();
+        assert_eq!(id.renormalize(), id);
+
+        let mut m = id;
+        for _ in 0..1000 {
+            // slightly non-unit rotor to simulate drift
+            let r = Motor::rotor(0.1, Pga3::basis(0b0110));
+            // add some small error to versor
+            let mut v = r.versor();
+            v.coeffs[0] += 1e-6;
+            let m_drift = Motor::from_versor(v);
+            m = m * m_drift;
+        }
+
+        let m_renorm = m.renormalize();
+        assert!((m_renorm.norm_squared() - 1.0).abs() < 1e-12);
+
+        // idempotence
+        let m_renorm_twice = m_renorm.renormalize();
+        approx_eq(
+            &m_renorm.versor().coeffs,
+            &m_renorm_twice.versor().coeffs,
+            1e-12,
+        );
     }
 
     #[test]
@@ -613,22 +1056,224 @@ mod tests {
         }
     }
 
-    // --- Issue #32: Motor::from_unit_quaternion ---
+    // --- Slerp principal-branch semantics ------------------------------
+    //
+    // `log` folds the versor sign to ⟨R⟩₀ ≥ 0 before recovering the screw,
+    // so a single slerp span always takes the *short way* and its rotation
+    // is capped at a half turn (τ/2). These tests pin what that means at
+    // the branch boundaries — none of it is an accident to be "fixed"
+    // silently; see the `Motor::slerp` docs.
 
     #[test]
-    fn from_unit_quaternion_identity() {
-        let id = Motor::<f64>::from_unit_quaternion(1.0, 0.0, 0.0, 0.0);
-        assert_eq!(id, Motor::identity());
+    fn slerp_just_under_half_turn_interpolates_forward() {
+        // θ < τ/2: forward really is the short way — the span sweeps the
+        // authored rotation, scaled by t.
+        let theta = TAU / 2.0 - 1e-3;
+        let plane = Pga3::basis(0b0011);
+        let b = Motor::rotor(theta, plane);
+        let id = Motor::identity();
+        for &t in &[0.25, 0.5, 0.75, 1.0] {
+            same_motion(&id.slerp(&b, t), &Motor::rotor(t * theta, plane), 1e-9);
+        }
     }
+
+    #[test]
+    fn slerp_at_exactly_half_turn_direction_is_a_float_tie_break() {
+        // rotor(τ/2, P) and rotor(−τ/2, P) are the SAME motion (a half
+        // turn lands identically either way; the versors are ∓P). With
+        // ⟨R⟩₀ = 0 there is no geometric short way: the branch is picked
+        // by the float sign of the versor's coefficients — the scalar's
+        // rounding dust (cos(τ/4) ≈ +6.1e-17 > 0, so no fold) and then
+        // the bivector's sign. Net effect today: each versor slerps in
+        // its *authored* direction, so identical end motions take
+        // opposite midpoints.
+        let plane = Pga3::basis(0b0011);
+        let pos = Motor::rotor(TAU / 2.0, plane);
+        let neg = Motor::rotor(-TAU / 2.0, plane);
+        same_motion(&pos, &neg, 1e-12); // one motion...
+        let id = Motor::identity();
+        same_motion(&id.slerp(&pos, 0.5), &Motor::rotor(TAU / 4.0, plane), 1e-9);
+        same_motion(&id.slerp(&neg, 0.5), &Motor::rotor(-TAU / 4.0, plane), 1e-9);
+    }
+
+    #[test]
+    fn slerp_just_past_half_turn_flips_to_the_short_way() {
+        // θ = τ/2 + ε: the short way is now *backwards* by τ − θ, so the
+        // midpoint jumps to the far side of where a forward sweep would
+        // sit — an ε-sized change of key crosses the branch cut. The
+        // endpoint still agrees as a motion (θ − τ ≡ θ mod τ).
+        let theta = TAU / 2.0 + 1e-3;
+        let plane = Pga3::basis(0b0011);
+        let b = Motor::rotor(theta, plane);
+        let id = Motor::identity();
+        same_motion(&id.slerp(&b, 0.5), &Motor::rotor((theta - TAU) / 2.0, plane), 1e-9);
+        same_motion(&id.slerp(&b, 1.0), &b, 1e-9);
+    }
+
+    #[test]
+    fn slerp_just_under_a_full_turn_plays_a_small_backwards_rotation() {
+        // θ = τ − ε folds to a rotation by −ε: the pose at t = 1 is
+        // right, but the sweep is a tiny reversal instead of an
+        // almost-full turn. Subdivide keys to author the full sweep.
+        let theta = TAU - 1e-3;
+        let plane = Pga3::basis(0b0011);
+        let b = Motor::rotor(theta, plane);
+        let id = Motor::identity();
+        for &t in &[0.5, 1.0] {
+            same_motion(&id.slerp(&b, t), &Motor::rotor(t * (theta - TAU), plane), 1e-9);
+        }
+    }
+
+    #[test]
+    fn slerp_to_a_full_turn_collapses_to_the_identity() {
+        // rotor(τ, P) is the identity motion carried by the versor −1;
+        // the sign fold erases it, log ≈ 0, and the whole span
+        // degenerates — every t returns (numerically) the identity.
+        // This is why RFC-012 §3.5 must not author a full turn in one
+        // span.
+        let plane = Pga3::basis(0b0011);
+        let full = Motor::rotor(TAU, plane);
+        assert!((full.versor().coeffs[0] + 1.0).abs() < 1e-12, "versor is −1");
+        let id = Motor::identity();
+        for &t in &[0.25, 0.5, 0.75, 1.0] {
+            same_motion(&id.slerp(&full, t), &id, 1e-9);
+        }
+    }
+
+    #[test]
+    fn slerp_span_rotation_never_exceeds_a_half_turn() {
+        // The folded log caps the recovered half-angle at τ/4, i.e. a
+        // single span sweeps at most τ/2 of rotation however much was
+        // authored (|log| peaks at θ = τ/2, then *decreases* again).
+        let plane = Pga3::basis(0b0011);
+        for &theta in &[0.1, 1.0, 2.0, 3.0, TAU / 2.0, 4.0, 5.0, 6.0, TAU - 1e-6, TAU] {
+            let n = Motor::rotor(theta, plane).log().norm();
+            assert!(n <= TAU / 4.0 + 1e-9, "theta={theta}: |log| = {n}");
+        }
+    }
+
+    // --- Motor::exp (the log's inverse) ---------------------------------
+
+    #[test]
+    fn exp_round_trips_translator_rotor_and_screw_logs() {
+        let cases = [
+            Motor::translator(1.5, -2.0, 0.5),
+            Motor::rotor(2.0, Pga3::basis(0b0011)),
+            Motor::translator(1.0, 2.0, 3.0) * Motor::rotor(1.1, Pga3::basis(0b0101)),
+        ];
+        for m in cases {
+            approx_eq(&Motor::exp(m.log()).versor().coeffs, &m.versor().coeffs, 1e-12);
+        }
+    }
+
+    #[test]
+    fn exp_of_a_folded_log_flips_the_versor_sign_only() {
+        // Past a half turn the log folds the versor sign, so exp returns
+        // −versor: a different versor, the same motion.
+        let m = Motor::rotor(TAU / 2.0 + 1.0, Pga3::basis(0b0011));
+        let back = Motor::exp(m.log());
+        approx_eq(&back.versor().coeffs, &(m.versor() * -1.0).coeffs, 1e-12);
+        same_motion(&back, &m, 1e-12);
+    }
+
+    // --- Generator-cached slerp -----------------------------------------
+
+    #[test]
+    fn slerp_from_generator_replays_slerp_bit_for_bit() {
+        let a = Motor::rotor(0.7, Pga3::basis(0b0011)) * Motor::translator(0.0, 2.0, -1.0);
+        let b = Motor::rotor(-0.4, Pga3::basis(0b0110)) * Motor::translator(3.0, 0.0, 0.5);
+        let gen = a.screw_generator(&b);
+        for &t in &[-0.5, 0.0, 0.25, 0.5, 1.0, 1.5] {
+            assert_eq!(a.slerp_from_generator(&gen, t), a.slerp(&b, t));
+        }
+    }
+
+    // --- slerp_unwrapped (winding past the short-way fold) --------------
+
+    #[test]
+    fn slerp_unwrapped_zero_turns_is_slerp_bit_for_bit() {
+        let a = Motor::rotor(0.7, Pga3::basis(0b0011)) * Motor::translator(0.0, 2.0, -1.0);
+        let b = Motor::rotor(-0.4, Pga3::basis(0b0110)) * Motor::translator(3.0, 0.0, 0.5);
+        for &t in &[0.0, 0.25, 0.5, 1.0] {
+            assert_eq!(a.slerp_unwrapped(&b, t, 0), a.slerp(&b, t));
+        }
+    }
+
+    #[test]
+    fn slerp_unwrapped_sweeps_the_long_way() {
+        // identity → just-under-half-turn with one extra turn: the path
+        // sweeps θ + τ in the span's own direction and still lands on
+        // the target.
+        let theta = TAU / 2.0 - 1e-3;
+        let plane = Pga3::basis(0b0011);
+        let b = Motor::rotor(theta, plane);
+        let id = Motor::identity();
+        for &t in &[0.25, 0.5, 0.75] {
+            same_motion(
+                &id.slerp_unwrapped(&b, t, 1),
+                &Motor::rotor(t * (theta + TAU), plane),
+                1e-9,
+            );
+        }
+        same_motion(&id.slerp_unwrapped(&b, 1.0, 1), &b, 1e-9);
+    }
+
+    #[test]
+    fn slerp_unwrapped_negative_turns_wind_against_the_span() {
+        let theta = 1.0;
+        let plane = Pga3::basis(0b0011);
+        let b = Motor::rotor(theta, plane);
+        let id = Motor::identity();
+        same_motion(
+            &id.slerp_unwrapped(&b, 0.5, -1),
+            &Motor::rotor((theta - TAU) / 2.0, plane),
+            1e-9,
+        );
+        same_motion(&id.slerp_unwrapped(&b, 1.0, -1), &b, 1e-9);
+    }
+
+    #[test]
+    fn slerp_unwrapped_winds_about_the_screw_axis_not_the_origin() {
+        // An off-origin screw: the extra turn must wind about the span's
+        // own axis (the vertical line through (1,0,0)) — winding about a
+        // parallel origin plane would not commute with the generator and
+        // would drag the midpoint somewhere else entirely.
+        let axis = Pga3::point(1.0, 0.0, 0.0).line_through(&Pga3::point(1.0, 0.0, 1.0));
+        let b = Motor::translator(0.0, 0.0, 0.7) * Motor::rotation_about(axis, 0.8);
+        let id = Motor::identity();
+        let mid = id.slerp_unwrapped(&b, 0.5, 1);
+        let expected =
+            Motor::translator(0.0, 0.0, 0.35) * Motor::rotation_about(axis, (0.8 + TAU) / 2.0);
+        same_motion(&mid, &expected, 1e-9);
+        same_motion(&id.slerp_unwrapped(&b, 1.0, 1), &b, 1e-9);
+    }
+
+    #[test]
+    fn slerp_unwrapped_ignores_turns_on_a_rotation_free_span() {
+        // No rotation, no canonical plane to wind around: extra turns are
+        // ignored (the documented degenerate rule) rather than spun about
+        // whatever numerical dust the log left behind.
+        let id = Motor::identity();
+        let tr = Motor::translator(1.0, 2.0, 3.0);
+        assert_eq!(id.slerp_unwrapped(&tr, 0.5, 1), id.slerp(&tr, 0.5));
+        // The τ-collapsed span leaves ~1e-16 of rotation dust — below
+        // the threshold, so it must not wind either.
+        let full = Motor::rotor(TAU, Pga3::basis(0b0011));
+        assert_eq!(id.slerp_unwrapped(&full, 0.5, 1), id.slerp(&full, 0.5));
+    }
+
+    // --- Issue #32: Motor::from_unit_quaternion ---
 
     #[test]
     fn from_unit_quaternion_round_trip_via_matrix() {
         // Four distinct unit quaternions and expected 3×3 rotation blocks.
         // q = (cos θ/2, sin θ/2 · n̂) for rotations about each axis.
-        let half = TAU / 8.0; // θ = 90°  →  cos(τ/8), sin(τ/8)
+        let half = TAU / 8.0; // θ = 90°  →  cos(π/4), sin(π/4)
         let c = half.cos();
         let s = half.sin();
-        let cases: &[(f64, f64, f64, f64, [f64; 3], [f64; 3])] = &[
+        /// `(w, x, y, z, input direction, expected rotated direction)`.
+        type QuatCase = (f64, f64, f64, f64, [f64; 3], [f64; 3]);
+        let cases: &[QuatCase] = &[
             // rotation about x-axis 90°: e_y → e_z
             (c, s, 0.0, 0.0, [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]),
             // rotation about y-axis 90°: e_z → e_x
@@ -662,11 +1307,7 @@ mod tests {
     fn norm_of_any_rotor_is_one() {
         for &theta in &[0.0, 0.5, 1.0, TAU / 4.0] {
             let r = Motor::rotor(theta, Pga3::basis(0b0110));
-            assert!(
-                (r.norm() - 1.0).abs() < 1e-12,
-                "theta={theta} norm={}",
-                r.norm()
-            );
+            assert!((r.norm() - 1.0).abs() < 1e-12, "theta={theta} norm={}", r.norm());
         }
     }
 
@@ -692,11 +1333,7 @@ mod tests {
         // Introduce artificial scale drift.
         let drifted = Motor::from_versor(m.versor() * 1.05);
         let fixed = drifted.renormalize();
-        assert!(
-            (fixed.norm_squared() - 1.0).abs() < 1e-12,
-            "norm² = {}",
-            fixed.norm_squared()
-        );
+        assert!((fixed.norm_squared() - 1.0).abs() < 1e-12, "norm² = {}", fixed.norm_squared());
     }
 
     #[test]
@@ -714,11 +1351,7 @@ mod tests {
     fn frechet_mean_of_single_motor_is_identity_distance() {
         let m = Motor::translator(1.0, -1.0, 2.0);
         let mean = Motor::frechet_mean(&[m], 1e-8, 20);
-        assert!(
-            mean.geodesic_distance(&m) < 1e-8,
-            "dist = {}",
-            mean.geodesic_distance(&m)
-        );
+        assert!(mean.geodesic_distance(&m) < 1e-8, "dist = {}", mean.geodesic_distance(&m));
     }
 
     #[test]
@@ -742,12 +1375,6 @@ mod tests {
         let expected = Motor::rotor(avg_angle, plane);
         let p = Pga3::point(0.0, 1.0, 0.0);
         approx_eq(&mean.apply(&p).coeffs, &expected.apply(&p).coeffs, 1e-8);
-    }
-
-    #[test]
-    #[should_panic(expected = "frechet_mean: motors must be non-empty")]
-    fn frechet_mean_panics_on_empty() {
-        Motor::frechet_mean(&[], 1e-8, 20);
     }
 
     // --- Issue #36: Motor::geodesic_distance ---
@@ -775,9 +1402,7 @@ mod tests {
         let ab = a.geodesic_distance(&b);
         let bc = b.geodesic_distance(&c);
         let ac = a.geodesic_distance(&c);
-        assert!(
-            ac <= ab + bc + 1e-12,
-            "triangle inequality: {ac} <= {ab} + {bc}"
-        );
+        assert!(ac <= ab + bc + 1e-12, "triangle inequality: {ac} <= {ab} + {bc}");
     }
 }
+

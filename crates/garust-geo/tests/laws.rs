@@ -29,8 +29,12 @@ fn xyz_close(got: (f64, f64, f64), want: (f64, f64, f64)) -> bool {
 
 /// One of the three Euclidean basis bivectors of PGA — a valid rotation
 /// plane (it squares to −1): `e1e2`, `e1e3`, `e2e3`.
+///
+/// The null generator `e0` sits at **bit 3**, so any mask with that bit set
+/// (`0b1001`, `0b1010`, `0b1100`) is an *ideal* bivector squaring to 0 —
+/// feeding one to `Motor::rotor` yields a translator, not a rotation.
 fn pga_axis(choice: usize) -> Pga3 {
-    Pga3::basis([0b0110, 0b1010, 0b1100][choice % 3])
+    Pga3::basis([0b0011, 0b0101, 0b0110][choice % 3])
 }
 
 /// One of the three Euclidean basis bivectors of CGA — `e1e2`, `e1e3`,
@@ -50,6 +54,18 @@ prop_compose! {
     fn any_motor()(
         dx in -2.0f64..2.0, dy in -2.0f64..2.0, dz in -2.0f64..2.0,
         angle in 0.0f64..TAU, axis in 0usize..3,
+    ) -> Motor3 {
+        Motor::translator(dx, dy, dz) * Motor::rotor(angle, pga_axis(axis))
+    }
+}
+
+prop_compose! {
+    // A random rigid motion whose rotor stays below the half-turn fold
+    // (θ < τ/2), so the versor has ⟨M⟩₀ > 0 and `log` is exactly
+    // invertible on the versor, not just on the motion.
+    fn below_fold_motor()(
+        dx in -2.0f64..2.0, dy in -2.0f64..2.0, dz in -2.0f64..2.0,
+        angle in 0.0f64..3.0, axis in 0usize..3,
     ) -> Motor3 {
         Motor::translator(dx, dy, dz) * Motor::rotor(angle, pga_axis(axis))
     }
@@ -137,5 +153,137 @@ proptest! {
     #[test]
     fn conformal_is_unit_norm(c in any_conformal()) {
         prop_assert!((c.norm_squared() - 1.0).abs() < 1e-9);
+    }
+
+    // apply_point_fast must equal Motor::apply on a PGA point within 1e-10.
+    #[test]
+    #[cfg(feature = "simd")]
+    fn apply_point_fast_equals_apply(
+        m in any_motor(), x in coord(), y in coord(), z in coord(),
+    ) {
+        let (ex, ey, ez) = pga::Point::new(x, y, z).transform(&m).to_euclidean();
+        let [fx, fy, fz] = m.apply_point_fast([x, y, z]);
+        prop_assert!(
+            (fx - ex).abs() < 1e-10 && (fy - ey).abs() < 1e-10 && (fz - ez).abs() < 1e-10,
+            "fast=({fx},{fy},{fz}) vs apply=({ex},{ey},{ez})"
+        );
+    }
+
+    // --- Motor Bézier splines (RFC-013 R1) -------------------------------
+
+    // The curve interpolates its endpoints exactly (as motions — compare
+    // the action on a point, since the versor sign is irrelevant).
+    #[test]
+    fn bezier_hits_both_endpoints(
+        m1 in any_motor(), m2 in any_motor(), m3 in any_motor(),
+        x in coord(), y in coord(), z in coord(),
+    ) {
+        let ctrl = [m1, m2, m3];
+        let p = pga::Point::new(x, y, z);
+        let start = p.transform(&Motor::bezier(&ctrl, 0.0));
+        let end = p.transform(&Motor::bezier(&ctrl, 1.0));
+        prop_assert!(xyz_close(start.to_euclidean(), p.transform(&m1).to_euclidean()));
+        prop_assert!(xyz_close(end.to_euclidean(), p.transform(&m3).to_euclidean()));
+    }
+
+    // Two control motors reduce Bézier to plain slerp.
+    #[test]
+    fn bezier_of_two_controls_is_slerp(
+        m1 in any_motor(), m2 in any_motor(), t in 0.0f64..1.0,
+    ) {
+        prop_assert!(close(
+            &Motor::bezier(&[m1, m2], t).versor(),
+            &m1.slerp(&m2, t).versor(),
+        ));
+    }
+
+    // Every point on (and beyond) the curve is a unit motor — geodesic
+    // blending never leaves the group, so no renormalization is needed.
+    #[test]
+    fn bezier_stays_unit_norm(
+        m1 in any_motor(), m2 in any_motor(), m3 in any_motor(), m4 in any_motor(),
+        t in -0.5f64..1.5,
+    ) {
+        let b = Motor::bezier(&[m1, m2, m3, m4], t);
+        prop_assert!((b.norm_squared() - 1.0).abs() < 1e-9);
+    }
+
+    // --- Motor::exp / Motor::log round trips -----------------------------
+
+    // exp inverts log exactly on the versor while the rotation stays below
+    // the τ/2 fold — for translators, rotors, and general screws alike...
+    #[test]
+    fn motor_exp_inverts_log_on_the_versor_below_the_fold(m in below_fold_motor()) {
+        prop_assert!(close(&Motor::exp(m.log()).versor(), &m.versor()));
+    }
+
+    // ...and as a *motion* everywhere, the versor's sign being
+    // unobservable in the sandwich.
+    #[test]
+    fn motor_exp_inverts_log_as_a_motion(
+        m in any_motor(), x in coord(), y in coord(), z in coord(),
+    ) {
+        let p = Pga3::point(x, y, z);
+        prop_assert!(close(&Motor::exp(m.log()).apply(&p), &m.apply(&p)));
+    }
+
+    // --- Generator-cached slerp (log once per span) -----------------------
+
+    // Caching the span generator must not change the curve: bit-for-bit
+    // equality with slerp, for every t including extrapolation.
+    #[test]
+    fn slerp_from_generator_matches_slerp_exactly(
+        a in any_motor(), b in any_motor(), t in -0.5f64..1.5,
+    ) {
+        let gen = a.screw_generator(&b);
+        prop_assert_eq!(a.slerp_from_generator(&gen, t), a.slerp(&b, t));
+    }
+
+    // --- slerp_unwrapped -------------------------------------------------
+
+    // Winding must be invisible at the end of the span: whatever the turn
+    // count, t = 1 still lands on `b` as a motion, because a full turn
+    // about any line is the identity motion.
+    #[test]
+    fn slerp_unwrapped_hits_the_endpoint_for_any_turn_count(
+        a in any_motor(), b in any_motor(), k in -2i32..3,
+        x in coord(), y in coord(), z in coord(),
+    ) {
+        let p = Pga3::point(x, y, z);
+        prop_assert!(close(&a.slerp_unwrapped(&b, 1.0, k).apply(&p), &b.apply(&p)));
+    }
+
+    // Zero extra turns takes the untouched fast path: slerp, bit for bit.
+    #[test]
+    fn slerp_unwrapped_zero_turns_is_slerp(
+        a in any_motor(), b in any_motor(), t in -0.5f64..1.5,
+    ) {
+        prop_assert_eq!(a.slerp_unwrapped(&b, t, 0), a.slerp(&b, t));
+    }
+
+    // --- Kinematic chains (RFC-013 R2/R3) --------------------------------
+
+    // IK recovers any pose the arm can hold: build the target by FK, then
+    // solve back from a perturbed seed and compare poses (not joint
+    // vectors — elbow flips are fine).
+    #[test]
+    fn ik_round_trips_forward_kinematics(
+        q1 in -2.0f64..2.0, q2 in -2.0f64..2.0,
+    ) {
+        use garust_geo::chain::{Chain, ChainJoint, IkParams, Link};
+
+        let z = Pga3::point(0.0, 0.0, 0.0).line_through(&Pga3::point(0.0, 0.0, 1.0));
+        let links = [
+            Link { offset: Motor::identity(), joint: ChainJoint::Revolute(z) },
+            Link { offset: Motor::translator(1.0, 0.0, 0.0), joint: ChainJoint::Revolute(z) },
+        ];
+        let arm = Chain::new(&links);
+
+        let target = arm.fk(&[q1, q2]);
+        let seed = [q1 + 0.25, q2 - 0.25];
+        let mut q = [0.0_f64; 2];
+        let r = arm.ik_dls(&target, &seed, &mut q, IkParams::default());
+        prop_assert!(r.converged, "err = {}", r.err);
+        prop_assert!(arm.fk(&q).geodesic_distance(&target) < 1e-8);
     }
 }

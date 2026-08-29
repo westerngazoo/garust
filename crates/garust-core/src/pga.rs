@@ -74,6 +74,94 @@ impl<T: Scalar> Multivector<Pga3Sig, T> {
         self.regressive(other)
     }
 
+    /// A body-frame **twist** bivector `B = ω + v`.
+    ///
+    /// Encodes the instantaneous rigid-body velocity as a single grade-2
+    /// element — the natural PGA form of the body Lie algebra element:
+    ///
+    /// - Angular part `ω = wx·e23 + wy·e31 + wz·e12` (Euclidean bivectors,
+    ///   one per rotation axis).
+    /// - Translational part `v = vx·e01 + vy·e02 + vz·e03` (ideal bivectors,
+    ///   one per translation direction).
+    ///
+    /// The equations of motion are `Ṁ = -½·M·B` (kinematics) and
+    /// `Ṗ = W + P.commutator(B)` (dynamics), where `P = 𝓘(B)` is momentum
+    /// and `W` a wrench. See also [`Multivector::wrench`] and
+    /// [`Multivector::commutator`].
+    pub fn twist(vx: T, vy: T, vz: T, wx: T, wy: T, wz: T) -> Self {
+        let e0 = Self::basis(8);
+        let e1 = Self::basis(1);
+        let e2 = Self::basis(2);
+        let e3 = Self::basis(4);
+        (e2 * e3) * wx
+            + (e3 * e1) * wy
+            + (e1 * e2) * wz
+            + (e0 * e1) * vx
+            + (e0 * e2) * vy
+            + (e0 * e3) * vz
+    }
+
+    /// A **wrench** bivector `W = τ + f`.
+    ///
+    /// The PGA dual of a twist: packages torque and force into one grade-2
+    /// element for feeding into the equations of motion (`Ṗ = W + P×B`):
+    ///
+    /// - Torque part `τ = tx·e23 + ty·e31 + tz·e12` (Euclidean bivectors).
+    /// - Force part `f = fx·e01 + fy·e02 + fz·e03` (ideal bivectors).
+    ///
+    /// A wrench applied at the centre of mass produces no angular impulse;
+    /// for an off-centre force, add the lever-arm cross-product as torque.
+    pub fn wrench(fx: T, fy: T, fz: T, tx: T, ty: T, tz: T) -> Self {
+        let e0 = Self::basis(8);
+        let e1 = Self::basis(1);
+        let e2 = Self::basis(2);
+        let e3 = Self::basis(4);
+        (e2 * e3) * tx
+            + (e3 * e1) * ty
+            + (e1 * e2) * tz
+            + (e0 * e1) * fx
+            + (e0 * e2) * fy
+            + (e0 * e3) * fz
+    }
+
+    /// The exact inverse of [`Multivector::twist`]: read the six grade-2
+    /// components back out as `([vx, vy, vz], [wx, wy, wz])`.
+    ///
+    /// `twist` writes its arguments onto the six bivector blades with the
+    /// signs below. The stored basis keeps generators in bit order with the
+    /// null generator *last*, so the PGA-literature blades `e31`, `e01`,
+    /// `e02`, `e03` land on their stored slots with a sign flip:
+    ///
+    /// | argument | blade (PGA order) | stored slot        | stored sign |
+    /// |----------|-------------------|--------------------|-------------|
+    /// | `wx`     | `e23`             | `0b0110`           | `+`         |
+    /// | `wy`     | `e31`             | `0b0101` (`e13`)   | `−`         |
+    /// | `wz`     | `e12`             | `0b0011`           | `+`         |
+    /// | `vx`     | `e01`             | `0b1001` (`e1∧e0`) | `−`         |
+    /// | `vy`     | `e02`             | `0b1010` (`e2∧e0`) | `−`         |
+    /// | `vz`     | `e03`             | `0b1100` (`e3∧e0`) | `−`         |
+    ///
+    /// This method undoes exactly those signs, so
+    /// `Pga3::twist(v, w).twist_parts() == (v, w)` bit-for-bit — placing
+    /// and negating coefficients is exact in floating point, and no other
+    /// arithmetic happens. [`Multivector::wrench`] shares the layout, so
+    /// the same call splits a wrench into `([fx, fy, fz], [tx, ty, tz])`.
+    /// Only the six grade-2 slots are read; any other grades present are
+    /// ignored.
+    ///
+    /// ```
+    /// use garust_core::Pga3;
+    /// let b = Pga3::twist(1.0, 2.0, 3.0, 4.0, 5.0, 6.0);
+    /// assert_eq!(b.twist_parts(), ([1.0, 2.0, 3.0], [4.0, 5.0, 6.0]));
+    /// ```
+    pub fn twist_parts(&self) -> ([T; 3], [T; 3]) {
+        let c = &self.coeffs;
+        (
+            [-c[0b1001], -c[0b1010], -c[0b1100]],
+            [c[0b0110], -c[0b0101], c[0b0011]],
+        )
+    }
+
     /// A PGA-aware [`fmt::Display`] view that prints the null generator
     /// as `e0`, written *first* in each blade, matching the PGA
     /// literature.
@@ -93,6 +181,126 @@ impl<T: Scalar> Multivector<Pga3Sig, T> {
     pub fn display_pga(&self) -> PgaDisplay<T> {
         PgaDisplay { mv: *self }
     }
+}
+
+/// The screw-axis decomposition needs square roots and ordering, so it
+/// lives in a separate `impl` bounded by [`Real`] rather than [`Scalar`].
+/// Like the constructors above it is pinned to the `Cl(3, 0, 1)` signature.
+impl<T: Real> Multivector<Pga3Sig, T> {
+    /// Decompose a grade-2 **twist** into its instantaneous screw axis —
+    /// the drawable form of the motion: a directed axis line in space, the
+    /// rotation rate about it, and the slide rate along it.
+    ///
+    /// A twist `B = twist(v, w)` generates the motion `M(t) = exp(−t·B/2)`,
+    /// under which a point `x` moves with velocity `ẋ = w × x + v`. By
+    /// Chasles' theorem that velocity field is a **screw**: a right-handed
+    /// rotation at `‖w‖` about a unique axis, plus a slide along that same
+    /// axis. This method returns the axis and its rates:
+    ///
+    /// - `direction` — the unit axis `w / ‖w‖`; rotation follows the
+    ///   right-hand rule about it.
+    /// - `point` — the point on the axis closest to the origin,
+    ///   `(w × v) / ‖w‖²`.
+    /// - `angle_rate` — `‖w‖`, radians per unit of the twist's scale.
+    /// - `pitch` — slide along the axis per **radian** of rotation,
+    ///   `(w · v) / ‖w‖²`; zero for a pure (possibly off-axis) rotation.
+    ///
+    /// Internally the twist is first separated by
+    /// [`Multivector::try_bivector_split`] into a *simple* part (the axis
+    /// line, weighted by the rotation rate) and an *ideal* null part (the
+    /// slide along it); the axis point comes from the simple part and the
+    /// pitch from the ideal part. When the twist is already simple — every
+    /// join/meet line, every zero-pitch rotation — the split is exact and
+    /// `pitch` is exactly `0.0`, so a renderer can branch on it. Like the
+    /// split, this expects a bivector (debug-asserted).
+    ///
+    /// Returns `None` when there is no finite axis to draw:
+    ///
+    /// - **pure translations** (and the zero twist). An ideal twist's
+    ///   "axis" is the ideal line at infinity — equivalently its pitch is
+    ///   infinite — so rather than return non-finite components the policy
+    ///   here is `None`; recover the translation with
+    ///   [`Multivector::twist_parts`] and draw a straight arrow instead.
+    ///   The test is relative: a Euclidean part below `1e-12` of the
+    ///   twist's total magnitude (norm-wise) counts as ideal.
+    /// - the split itself fails (isoclinic bivectors). Unreachable for
+    ///   genuine PGA twists — the degenerate metric makes the split total —
+    ///   but mapped to `None` rather than a panic.
+    ///
+    /// Raw components are returned rather than a typed line because the
+    /// typed `pga::Line` lives a layer up, in `garust-geo` (which
+    /// re-exports [`ScrewAxis`] alongside it); the components feed a
+    /// renderer directly. Note the sign seam pinned there: a typed line's
+    /// `direction()` is the join's `b − a`, while a twist rotates
+    /// right-handed about *its* `direction` — for the same raw bivector
+    /// the two conventions differ by a sign.
+    ///
+    /// ```
+    /// use garust_core::Pga3;
+    /// // Spin about +z through (1, 0, 0) at 1 rad/s, sliding 0.5/radian.
+    /// let b = Pga3::twist(0.0, -1.0, 0.5, 0.0, 0.0, 1.0);
+    /// let s = b.screw_axis().unwrap();
+    /// assert_eq!(s.direction, [0.0, 0.0, 1.0]);
+    /// assert!((s.point[0] - 1.0).abs() < 1e-12);
+    /// assert!((s.pitch - 0.5).abs() < 1e-12);
+    /// // A pure translation has no finite axis.
+    /// assert_eq!(Pga3::twist(1.0, 2.0, 3.0, 0.0, 0.0, 0.0).screw_axis(), None);
+    /// ```
+    pub fn screw_axis(&self) -> Option<ScrewAxis<T>> {
+        let (b1, b2) = self.try_bivector_split()?;
+        let (v1, w1) = b1.twist_parts();
+        let (v2, w2) = b2.twist_parts();
+        let dot = |a: &[T; 3], b: &[T; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+        let (n1, n2) = (dot(&w1, &w1), dot(&w2, &w2));
+        // The split returns its parts in no particular order; the axis line
+        // is the Euclidean-carrying one, the slide the ideal one.
+        let (v_axis, w, n, v_slide) = if n1 >= n2 {
+            (v1, w1, n1, v2)
+        } else {
+            (v2, w2, n2, v1)
+        };
+        // Ideal twist (pure translation or zero): the axis is the line at
+        // infinity — nothing finite to draw.
+        let scale = n1 + n2 + dot(&v1, &v1) + dot(&v2, &v2);
+        if n <= T::from_f64(1e-24) * scale {
+            return None;
+        }
+        let rate = n.sqrt();
+        let inv = T::ONE / n;
+        Some(ScrewAxis {
+            direction: [w[0] / rate, w[1] / rate, w[2] / rate],
+            point: [
+                (w[1] * v_axis[2] - w[2] * v_axis[1]) * inv,
+                (w[2] * v_axis[0] - w[0] * v_axis[2]) * inv,
+                (w[0] * v_axis[1] - w[1] * v_axis[0]) * inv,
+            ],
+            angle_rate: rate,
+            pitch: dot(&w, &v_slide) * inv,
+        })
+    }
+}
+
+/// A twist bivector's instantaneous **screw axis**, in renderer-ready
+/// components — built by [`Multivector::screw_axis`].
+///
+/// The motion is a right-handed rotation at `angle_rate` about the line
+/// `point + t·direction`, plus a slide of `pitch` along `direction` per
+/// radian of rotation. All components live in the same frame as the twist
+/// itself: decompose a body-frame twist and the axis is in body
+/// coordinates; conjugate the twist into another frame first to draw
+/// there.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ScrewAxis<T: Scalar> {
+    /// Unit vector along the axis; rotation is right-handed about it.
+    pub direction: [T; 3],
+    /// The point on the axis closest to the origin.
+    pub point: [T; 3],
+    /// Rotation rate `‖w‖` about the axis (radians per unit time, for a
+    /// velocity twist).
+    pub angle_rate: T,
+    /// Translation along `direction` per **radian** of rotation; exactly
+    /// `0.0` for a simple (pure-rotation) twist.
+    pub pitch: T,
 }
 
 /// A `Display` adapter for `Pga3` multivectors that names the null
@@ -164,6 +372,7 @@ impl<T: Real> fmt::Display for PgaDisplay<T> {
 #[cfg(test)]
 mod tests {
     use crate::Pga3;
+    use proptest::prelude::*;
 
     // --- Grades ---------------------------------------------------------
 
@@ -289,5 +498,158 @@ mod tests {
     #[test]
     fn display_shows_the_scalar_term() {
         assert_eq!(Pga3::one().display_pga().to_string(), "1");
+    }
+
+    // --- Twist and wrench ------------------------------------------------
+
+    #[test]
+    fn twist_is_pure_grade_2() {
+        let b = Pga3::twist(1.0, 2.0, 3.0, 4.0, 5.0, 6.0);
+        assert_eq!(b.grade(2).coeffs, b.coeffs);
+    }
+
+    #[test]
+    fn wrench_is_pure_grade_2() {
+        let w = Pga3::wrench(1.0, 2.0, 3.0, 4.0, 5.0, 6.0);
+        assert_eq!(w.grade(2).coeffs, w.coeffs);
+    }
+
+    #[test]
+    fn twist_zero_angular_has_only_ideal_blades() {
+        // No angular part → only e01, e02, e03 are nonzero.
+        let b = Pga3::twist(1.0, 2.0, 3.0, 0.0, 0.0, 0.0);
+        // Euclidean bivectors e23=6, e13=5, e12=3 must be zero.
+        assert_eq!(b.coeffs[0b0110], 0.0);
+        assert_eq!(b.coeffs[0b0101], 0.0);
+        assert_eq!(b.coeffs[0b0011], 0.0);
+    }
+
+    #[test]
+    fn twist_zero_velocity_has_only_euclidean_blades() {
+        // No translational part → only e23, e31, e12 are nonzero.
+        let b = Pga3::twist(0.0, 0.0, 0.0, 1.0, 2.0, 3.0);
+        // Ideal bivectors e01=9, e02=10, e03=12 must be zero.
+        assert_eq!(b.coeffs[9], 0.0);
+        assert_eq!(b.coeffs[10], 0.0);
+        assert_eq!(b.coeffs[12], 0.0);
+    }
+
+    #[test]
+    fn twist_and_wrench_share_blade_layout() {
+        // Same (vx,vy,vz,wx,wy,wz) in twist and (fx,fy,fz,tx,ty,tz) in wrench
+        // should produce identical coefficient arrays when corresponding
+        // arguments are equal.
+        let b = Pga3::twist(1.0, 2.0, 3.0, 4.0, 5.0, 6.0);
+        let w = Pga3::wrench(1.0, 2.0, 3.0, 4.0, 5.0, 6.0);
+        assert_eq!(b.coeffs, w.coeffs);
+    }
+
+    // --- twist_parts ------------------------------------------------------
+
+    #[test]
+    fn twist_parts_inverts_twist_exactly() {
+        let (v, w) = ([1.0, -2.5, 3.25], [-4.0, 5.5, -6.125]);
+        let b = Pga3::twist(v[0], v[1], v[2], w[0], w[1], w[2]);
+        assert_eq!(b.twist_parts(), (v, w));
+    }
+
+    #[test]
+    fn twist_parts_reads_only_the_bivector_slots() {
+        // A point (grade 3) has nothing on the six grade-2 blades.
+        assert_eq!(
+            Pga3::point(1.0, 2.0, 3.0).twist_parts(),
+            ([0.0; 3], [0.0; 3])
+        );
+    }
+
+    proptest! {
+        // The round-trip is exact: construction and extraction only place
+        // and negate coefficients, so no floating-point error can appear.
+        #[test]
+        fn twist_parts_twist_round_trip_is_exact(
+            vx in -1e6_f64..1e6, vy in -1e6_f64..1e6, vz in -1e6_f64..1e6,
+            wx in -1e6_f64..1e6, wy in -1e6_f64..1e6, wz in -1e6_f64..1e6,
+        ) {
+            let b = Pga3::twist(vx, vy, vz, wx, wy, wz);
+            prop_assert_eq!(b.twist_parts(), ([vx, vy, vz], [wx, wy, wz]));
+        }
+    }
+
+    // --- Screw axis -------------------------------------------------------
+
+    #[test]
+    fn screw_axis_of_rotation_about_z_through_origin() {
+        let s = Pga3::twist(0.0, 0.0, 0.0, 0.0, 0.0, 1.5)
+            .screw_axis()
+            .unwrap();
+        assert_eq!(s.direction, [0.0, 0.0, 1.0]);
+        assert_eq!(s.point, [0.0, 0.0, 0.0]);
+        assert_eq!(s.angle_rate, 1.5);
+        assert_eq!(s.pitch, 0.0);
+    }
+
+    #[test]
+    fn screw_axis_of_offset_rotation_has_zero_pitch_exactly() {
+        // Spin about the vertical line through (1, 0, 0): v = −w × p, so
+        // the twist is simple and the split's ideal part is exactly zero.
+        let s = Pga3::twist(0.0, -1.0, 0.0, 0.0, 0.0, 1.0)
+            .screw_axis()
+            .unwrap();
+        assert_eq!(s.direction, [0.0, 0.0, 1.0]);
+        assert_eq!(s.point, [1.0, 0.0, 0.0]);
+        assert_eq!(s.angle_rate, 1.0);
+        assert_eq!(s.pitch, 0.0);
+    }
+
+    #[test]
+    fn screw_axis_of_a_known_screw() {
+        // Axis +z through (1, 0, 0), rate 1, pitch 0.5: v = −w×p + pitch·w.
+        let s = Pga3::twist(0.0, -1.0, 0.5, 0.0, 0.0, 1.0)
+            .screw_axis()
+            .unwrap();
+        for (got, want) in s.direction.iter().zip([0.0, 0.0, 1.0]) {
+            assert!((got - want).abs() < 1e-12);
+        }
+        for (got, want) in s.point.iter().zip([1.0, 0.0, 0.0]) {
+            assert!((got - want).abs() < 1e-12);
+        }
+        assert!((s.angle_rate - 1.0).abs() < 1e-12);
+        assert!((s.pitch - 0.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn screw_axis_of_pure_translation_is_none() {
+        assert_eq!(
+            Pga3::twist(1.0, -2.0, 3.0, 0.0, 0.0, 0.0).screw_axis(),
+            None
+        );
+        assert_eq!(Pga3::zero().screw_axis(), None);
+    }
+
+    #[test]
+    fn screw_axis_treats_a_negligible_euclidean_part_as_translation() {
+        // The Euclidean part is 1e-26 of the ideal part: relatively ideal,
+        // so no (absurdly distant) axis is invented.
+        let b = Pga3::twist(1e6, 0.0, 0.0, 1e-20, 0.0, 0.0);
+        assert_eq!(b.screw_axis(), None);
+    }
+
+    #[test]
+    fn screw_axis_point_slides_along_the_axis() {
+        // For any screw, the twist's velocity field w×x + v evaluated at
+        // the returned axis point is pitch·angle_rate along direction —
+        // pure slide, no swing.
+        let b = Pga3::twist(0.7, -0.2, 0.4, 0.3, -1.1, 0.9);
+        let (v, w) = b.twist_parts();
+        let s = b.screw_axis().unwrap();
+        let p = s.point;
+        let vel = [
+            w[1] * p[2] - w[2] * p[1] + v[0],
+            w[2] * p[0] - w[0] * p[2] + v[1],
+            w[0] * p[1] - w[1] * p[0] + v[2],
+        ];
+        for (got, dir) in vel.iter().zip(s.direction.iter()) {
+            assert!((got - s.pitch * s.angle_rate * dir).abs() < 1e-12);
+        }
     }
 }

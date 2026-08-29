@@ -49,7 +49,7 @@
 pub mod contact;
 pub mod world;
 
-pub use world::{Body, World};
+pub use world::{Body, Joint, World, STATIC};
 
 use garust_core::Pga3;
 use garust_geo::Motor;
@@ -227,6 +227,88 @@ impl RigidBody {
         self.orientation.apply(&self.angular_momentum)
     }
 
+    /// The **body-frame momentum bivector** `P` — RFC-010 §2.1's single
+    /// grade-2 momentum, composed from the split state on the fly (the
+    /// stored representation stays split).
+    ///
+    /// Layout ([`Pga3::wrench`]'s): the body-frame angular momentum `Π`
+    /// ([`angular_momentum`](RigidBody::angular_momentum), already body) on
+    /// the Euclidean blades `e23, e31, e12`, and the linear momentum
+    /// rotated **world → body** (`R̃ p R`, with `R` the
+    /// [`orientation`](RigidBody::orientation)) on the ideal blades
+    /// `e01, e02, e03`. Both halves are then in the body frame, referenced
+    /// to the centre of mass — the frame in which `Ṗ = W + P × B` (the
+    /// crate-level equations of motion) and `P = 𝓘(B)` hold, with `B` the
+    /// body twist of [`RigidBody::twist`]. Split it back into components
+    /// with [`Pga3::twist_parts`].
+    pub fn momentum(&self) -> Pga3 {
+        let p = self.linear_momentum;
+        self.angular_momentum
+            + self
+                .orientation
+                .inverse()
+                .apply(&Pga3::wrench(p[0], p[1], p[2], 0.0, 0.0, 0.0))
+    }
+
+    /// The momentum bivector in **world axes**, still referenced to the
+    /// centre of mass — the same convention as
+    /// [`world_angular_momentum`](RigidBody::world_angular_momentum), which
+    /// is exactly its Euclidean part; the ideal part is
+    /// [`linear_momentum`](RigidBody::linear_momentum) as stored (already
+    /// world). Equal to `orientation.apply(&momentum())`, and conserved for
+    /// a free body.
+    ///
+    /// Not the spatial momentum about the *world origin*: that adds the
+    /// `x × p` moment of the centre of mass and is
+    /// `pose().apply(&momentum())`.
+    pub fn world_momentum(&self) -> Pga3 {
+        let p = self.linear_momentum;
+        self.world_angular_momentum() + Pga3::wrench(p[0], p[1], p[2], 0.0, 0.0, 0.0)
+    }
+
+    /// The **body-frame velocity twist** `B` — RFC-010 §2.1's single
+    /// grade-2 body velocity, satisfying the crate-level kinematics
+    /// `Ṁ = −½ · M · B` exactly, with `M =` [`pose()`](RigidBody::pose).
+    ///
+    /// Layout ([`Pga3::twist`]'s): the body-frame angular velocity
+    /// `ω = 𝓘⁻¹Π` ([`angular_velocity`](RigidBody::angular_velocity)) on
+    /// the Euclidean blades, and the centre-of-mass velocity rotated
+    /// **world → body** (`R̃ (p/m) R`) on the ideal blades. It pairs with
+    /// [`momentum`](RigidBody::momentum) as `P = 𝓘(B)` — the inertia map
+    /// acting as [`Inertia`] on the Euclidean half and as the scalar
+    /// `mass` on the ideal half. Split it back into components with
+    /// [`Pga3::twist_parts`], or hand it to [`Pga3::screw_axis`] for the
+    /// instantaneous screw in *body* coordinates — conjugate by the pose
+    /// first (`pose().apply(&…)`) for the world-space screw axis through
+    /// the body's actual location.
+    pub fn twist(&self, inertia: &Inertia) -> Pga3 {
+        let v = self.velocity();
+        self.angular_velocity(inertia)
+            + self
+                .orientation
+                .inverse()
+                .apply(&Pga3::twist(v[0], v[1], v[2], 0.0, 0.0, 0.0))
+    }
+
+    /// The velocity twist in **world axes**, referenced to the centre of
+    /// mass — the same convention as
+    /// [`world_angular_momentum`](RigidBody::world_angular_momentum): the
+    /// world-axes angular velocity `R ω R̃` on the Euclidean blades and
+    /// [`velocity()`](RigidBody::velocity) as-is on the ideal blades.
+    /// Equal to `orientation.apply(&twist(inertia))`.
+    ///
+    /// Not the spatial twist about the *world origin*; its
+    /// [`Pga3::screw_axis`] is therefore relative to the centre of mass
+    /// (translate the axis point by
+    /// [`position`](RigidBody::position) to draw it, or decompose
+    /// `pose().apply(&twist(inertia))` instead, which places the axis in
+    /// world space directly).
+    pub fn world_twist(&self, inertia: &Inertia) -> Pga3 {
+        let v = self.velocity();
+        self.orientation.apply(&self.angular_velocity(inertia))
+            + Pga3::twist(v[0], v[1], v[2], 0.0, 0.0, 0.0)
+    }
+
     /// The rotational half-step: the symplectic free-body splitting about the
     /// centre of mass, returning the advanced orientation and body-frame
     /// angular momentum.
@@ -301,7 +383,9 @@ impl RigidBody {
 mod tests {
     use super::{Inertia, RigidBody};
     use garust_core::Pga3;
+    use garust_geo::Motor;
     use proptest::prelude::*;
+    use std::f64::consts::TAU;
 
     fn max_coeff_diff(a: &Pga3, b: &Pga3) -> f64 {
         a.coeffs
@@ -475,6 +559,112 @@ mod tests {
         // And the orientation is still a unit versor.
         let v = body.orientation.versor();
         assert!(((v * v.reverse()).scalar_part() - 1.0).abs() < 1e-9);
+    }
+
+    // --- Composed twist / momentum bivectors -------------------------------
+
+    #[test]
+    fn composed_bivectors_round_trip_at_identity_orientation() {
+        // Every value is a small power of two, so the divisions (p/m, Π/I)
+        // and the identity-motor sandwich are exact and `==` is safe.
+        let inertia = Inertia::principal([2.0, 4.0, 0.5]);
+        let planes = Inertia::principal_planes();
+        let mut body = RigidBody::new(2.0);
+        body.angular_momentum = planes[0] * 1.5 + planes[1] * -3.0 + planes[2] * 0.25;
+        body.linear_momentum = [4.0, -2.0, 1.0];
+
+        // Momentum: ideal part = linear momentum, Euclidean part = Π.
+        assert_eq!(
+            body.momentum().twist_parts(),
+            ([4.0, -2.0, 1.0], [1.5, -3.0, 0.25])
+        );
+        // Twist: ideal part = velocity(), Euclidean part = 𝓘⁻¹Π.
+        assert_eq!(
+            body.twist(&inertia).twist_parts(),
+            (body.velocity(), [0.75, -0.75, 0.5])
+        );
+        // At identity orientation the world variants coincide.
+        assert_eq!(body.world_momentum(), body.momentum());
+        assert_eq!(body.world_twist(&inertia), body.twist(&inertia));
+    }
+
+    #[test]
+    fn world_variants_are_the_orientation_conjugates() {
+        let inertia = Inertia::principal([2.0, 3.0, 4.0]);
+        let planes = Inertia::principal_planes();
+        let mut body = RigidBody::new(2.0);
+        body.orientation = Motor::rotor(TAU / 4.0, Pga3::basis(0b0011)); // 90° about z
+        body.angular_momentum = planes[0] * 1.5 + planes[2] * -0.5;
+        body.linear_momentum = [4.0, -2.0, 1.0];
+
+        // world = R (body) R̃, for both bivectors.
+        let m = body.orientation.apply(&body.momentum());
+        assert!(max_coeff_diff(&m, &body.world_momentum()) < 1e-12);
+        let t = body.orientation.apply(&body.twist(&inertia));
+        assert!(max_coeff_diff(&t, &body.world_twist(&inertia)) < 1e-12);
+
+        // The world twist's ideal part is velocity() verbatim…
+        let (v, _) = body.world_twist(&inertia).twist_parts();
+        assert_eq!(v, body.velocity());
+        // …while the body twist's is velocity() rotated world → body:
+        // R̃ maps (2, −1, ·) ↦ (−1, −2, ·) for a 90° z-rotor.
+        let (vb, _) = body.twist(&inertia).twist_parts();
+        for (got, want) in vb.iter().zip([-1.0, -2.0, 0.5]) {
+            assert!((got - want).abs() < 1e-12, "body-frame v: {vb:?}");
+        }
+        // And the world momentum's Euclidean part is world_angular_momentum.
+        let (p, l) = body.world_momentum().twist_parts();
+        assert_eq!(p, body.linear_momentum);
+        let world_l = body.world_angular_momentum();
+        let l_biv = planes[0] * l[0] + planes[1] * l[1] + planes[2] * l[2];
+        assert!(max_coeff_diff(&l_biv, &world_l) < 1e-12);
+    }
+
+    #[test]
+    fn body_twist_satisfies_the_pose_kinematics() {
+        // Ṁ = −½·M·B with M = pose() and B = twist(): central difference
+        // of the integrator's own flow against the analytic right side.
+        let inertia = Inertia::principal([2.0, 3.0, 4.0]);
+        let planes = Inertia::principal_planes();
+        let mut body = RigidBody::new(1.5);
+        body.angular_momentum = planes[0] * 1.3 + planes[1] * -0.7 + planes[2] * 0.4;
+        body.linear_momentum = [2.0, 5.0, -1.0];
+        for _ in 0..50 {
+            body = body.step(0.01, &inertia, [0.0; 3], Pga3::zero()); // generic pose
+        }
+
+        let dt = 1e-4;
+        let plus = body.step(dt, &inertia, [0.0; 3], Pga3::zero());
+        let minus = body.step(-dt, &inertia, [0.0; 3], Pga3::zero());
+        let dm = (plus.pose().versor() - minus.pose().versor()) * (1.0 / (2.0 * dt));
+        let rhs = body.pose().versor() * body.twist(&inertia) * (-0.5);
+        assert!(
+            max_coeff_diff(&dm, &rhs) < 1e-6,
+            "kinematics residual {}",
+            max_coeff_diff(&dm, &rhs)
+        );
+    }
+
+    #[test]
+    fn pose_conjugated_twist_screws_through_the_centre_of_mass() {
+        // A body at (2,0,0) spinning about its own z: conjugating the body
+        // twist by the *pose* gives the world-space instantaneous screw,
+        // whose axis passes through the body's actual location…
+        let inertia = Inertia::principal([1.0, 1.0, 1.0]);
+        let mut body = RigidBody::new(1.0);
+        body.position = [2.0, 0.0, 0.0];
+        body.angular_momentum = Inertia::principal_planes()[2] * 3.0; // ω = 3 about z
+        let spatial = body.pose().apply(&body.twist(&inertia));
+        let s = spatial.screw_axis().unwrap();
+        assert_eq!(s.direction, [0.0, 0.0, 1.0]);
+        assert_eq!(s.point, [2.0, 0.0, 0.0]);
+        assert_eq!(s.angle_rate, 3.0);
+        assert_eq!(s.pitch, 0.0);
+        // …while world_twist() is referenced to the centre of mass, so its
+        // axis point is relative to it (here: the origin of that frame).
+        let w = body.world_twist(&inertia).screw_axis().unwrap();
+        assert_eq!(w.point, [0.0, 0.0, 0.0]);
+        assert_eq!(w.direction, [0.0, 0.0, 1.0]);
     }
 
     // --- Property-based conservation ---------------------------------------

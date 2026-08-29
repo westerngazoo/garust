@@ -272,8 +272,13 @@ impl<A: Algebra, T: Real> Multivector<A, T> {
         }
         let f2 = (f * f).scalar_part();
         let disc = s * s - f2;
-        if disc <= T::from_f64(1e-12) * scale * scale {
-            // Coincident (isoclinic) or complex roots: no canonical real split.
+        // Coincident (isoclinic) or complex roots: no canonical real split.
+        // The threshold must be *relative* to the roots' own magnitude: in a
+        // degenerate metric F² = 0, so `disc = s²` exactly, and a small-angle
+        // screw (tiny Euclidean rotation + translation on the same axis) has
+        // a well-defined split even though `s²` is absolutely tiny. An
+        // absolute floor here misclassified those screws as isoclinic.
+        if disc <= T::from_f64(1e-12) * max(s * s, f2.abs()) {
             return None;
         }
         let rad = disc.sqrt();
@@ -297,6 +302,40 @@ impl<A: Algebra, T: Real> Multivector<A, T> {
     /// identically to `R` in the sandwich, the sign is first folded to
     /// `⟨self⟩₀ ≥ 0`; the returned bivector is the *short way* — exactly
     /// what motor blending wants (cf. quaternion slerp's sign flip).
+    ///
+    /// # Principal branch, concretely
+    ///
+    /// The fold puts each recovered elliptic factor's half-angle in
+    /// `[0, τ/4]` — a rotor's recovered rotation never exceeds a **half
+    /// turn (τ/2)**, whatever was exponentiated:
+    ///
+    /// - `exp(−θ/2·B̂)` with `θ < τ/2` logs back to `−θ/2·B̂` exactly;
+    /// - for `τ/2 < θ < τ` the log is the complementary rotation the
+    ///   short way around, `+(τ−θ)/2·B̂` — direction *reversed* — so
+    ///   `θ = τ − ε` logs as a small bivector, not an almost-full turn;
+    /// - a full turn is invisible: `exp(−(τ/2)·B̂) = −1` folds to `+1`,
+    ///   whose log is `0` (a slerp toward it degenerates to a constant);
+    /// - at `θ = τ/2` exactly, `⟨R⟩₀ = 0` up to rounding dust and
+    ///   `±B̂` are equally principal: the branch lands on the side named
+    ///   by the floating-point signs of the folded versor's bivector
+    ///   coefficients (the `atan2(m, c ≈ 0)` quarter-turn limit of
+    ///   the per-factor rescale).
+    ///
+    /// Interpolation built on this log (`Motor::slerp` in `garust-geo`)
+    /// therefore sweeps at most τ/2 of rotation per span; see that
+    /// method for the animation-facing consequences and escape hatches.
+    ///
+    /// ```
+    /// use garust_core::Vga3;
+    /// use std::f64::consts::TAU;
+    /// let e12 = Vga3::basis(3);
+    /// // Below the fold the log is exact...
+    /// let r = (e12 * (-1.0 / 2.0)).exp();
+    /// assert!((r.log() + e12 * 0.5).norm() < 1e-12);
+    /// // ...but a full turn folds to nothing: exp(−(τ/2)·e12) = −1.
+    /// let full = (e12 * (-TAU / 2.0)).exp();
+    /// assert!(full.log().norm() < 1e-9);
+    /// ```
     ///
     /// The recovery mirrors the exponential's invariant split: writing
     /// `R = (c₁ + S₁)(c₂ + S₂)` over commuting simple bivectors,
@@ -541,6 +580,41 @@ mod tests {
         let b = (e0 * e1) * 0.42;
         let expected = Pga3::one() + b;
         approx_eq(&b.exp().coeffs, &expected.coeffs, 1e-12);
+    }
+
+    #[test]
+    fn small_angle_screw_bivector_still_splits() {
+        // Regression: a tiny Euclidean rotation plus a translation along
+        // the same axis. In PGA the grade-4 part of B² squares to zero, so
+        // the split discriminant is s² exactly — absolutely tiny for a
+        // small angle, but the split (Euclidean part, null part) is
+        // perfectly well-defined. The old absolute tolerance called this
+        // isoclinic and `log` panicked; the threshold is now relative.
+        use crate::Pga3;
+        let e12 = Pga3::basis(1) * Pga3::basis(2);
+        let e03 = Pga3::basis(8) * Pga3::basis(4);
+        let eps = 4e-4;
+        let b = e12 * eps + e03 * 0.635;
+        let (b1, b2) = b.try_bivector_split().expect("well-defined split");
+        // One part is the Euclidean plane, the other the null translation.
+        let (eucl, null) = if b1.coeffs[3].abs() > 1e-12 { (b1, b2) } else { (b2, b1) };
+        assert!((eucl.coeffs[3] - eps).abs() < 1e-12, "e12 part: {}", eucl.coeffs[3]);
+        // Canonical blade 12 is e3e0, and e0·e3 = −(e3·e0).
+        assert!((null.coeffs[12] + 0.635).abs() < 1e-9, "e03 part: {}", null.coeffs[12]);
+    }
+
+    #[test]
+    fn log_of_small_angle_screw_round_trips_through_exp() {
+        // The user-facing shape of the same regression: log of a versor
+        // whose rotation is small but non-zero next to a real translation
+        // (exactly what slerp computes between two nearby motor poses).
+        use crate::Pga3;
+        let e12 = Pga3::basis(1) * Pga3::basis(2);
+        let e03 = Pga3::basis(8) * Pga3::basis(4);
+        let b = e12 * 2e-4 + e03 * (-0.31);
+        let versor = b.exp();
+        let back = versor.log();
+        approx_eq(&back.coeffs, &b.coeffs, 1e-9);
     }
 
     #[test]
