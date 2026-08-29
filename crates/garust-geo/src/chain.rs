@@ -103,7 +103,11 @@ pub struct IkParams {
 
 impl Default for IkParams {
     fn default() -> Self {
-        Self { damping: 0.1, tol: 1e-10, max_iter: 200 }
+        Self {
+            damping: 0.1,
+            tol: 1e-10,
+            max_iter: 200,
+        }
     }
 }
 
@@ -201,7 +205,11 @@ impl<'a> Chain<'a> {
             err = garust_core::Real::sqrt(e.iter().map(|x| x * x).sum::<f64>());
             if err < params.tol {
                 out.copy_from_slice(&q[..n]);
-                return IkResult { converged: true, iters: iter, err };
+                return IkResult {
+                    converged: true,
+                    iters: iter,
+                    err,
+                };
             }
 
             // J[i][j] = ∂eᵢ/∂qⱼ by central differences.
@@ -245,7 +253,11 @@ impl<'a> Chain<'a> {
         }
 
         out.copy_from_slice(&q[..n]);
-        IkResult { converged: err < params.tol, iters: params.max_iter, err }
+        IkResult {
+            converged: err < params.tol,
+            iters: params.max_iter,
+            err,
+        }
     }
 }
 
@@ -303,13 +315,21 @@ mod tests {
     /// End-effector position: chain pose + tool offset applied to origin.
     fn ee(chain: &Chain, q: &[f64], tool_x: f64) -> (f64, f64, f64) {
         let pose = chain.fk(q) * Motor::translator(tool_x, 0.0, 0.0);
-        pga::Point::new(0.0, 0.0, 0.0).transform(&pose).to_euclidean()
+        pga::Point::new(0.0, 0.0, 0.0)
+            .transform(&pose)
+            .to_euclidean()
     }
 
     fn two_link() -> [Link; 2] {
         [
-            Link { offset: Motor::identity(), joint: ChainJoint::Revolute(z_axis()) },
-            Link { offset: Motor::translator(1.0, 0.0, 0.0), joint: ChainJoint::Revolute(z_axis()) },
+            Link {
+                offset: Motor::identity(),
+                joint: ChainJoint::Revolute(z_axis()),
+            },
+            Link {
+                offset: Motor::translator(1.0, 0.0, 0.0),
+                joint: ChainJoint::Revolute(z_axis()),
+            },
         ]
     }
 
@@ -347,7 +367,10 @@ mod tests {
     fn fk_mixed_revolute_prismatic_chain() {
         // A rotary base plus a vertical lift.
         let links = [
-            Link { offset: Motor::identity(), joint: ChainJoint::Revolute(z_axis()) },
+            Link {
+                offset: Motor::identity(),
+                joint: ChainJoint::Revolute(z_axis()),
+            },
             Link {
                 offset: Motor::translator(1.0, 0.0, 0.0),
                 joint: ChainJoint::Prismatic([0.0, 0.0, 1.0]),

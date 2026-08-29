@@ -270,10 +270,8 @@ impl Motor<f64> {
         let col2 = f64x4::from([r02, r12, r22, 0.0]);
         let col3 = f64x4::from([tx, ty, tz, 1.0]);
 
-        let result = col0 * f64x4::splat(px)
-            + col1 * f64x4::splat(py)
-            + col2 * f64x4::splat(pz)
-            + col3;
+        let result =
+            col0 * f64x4::splat(px) + col1 * f64x4::splat(py) + col2 * f64x4::splat(pz) + col3;
 
         let arr = result.to_array();
         [arr[0], arr[1], arr[2]]
@@ -608,9 +606,7 @@ impl<T: Real> Motor<T> {
             // discriminant only degenerates when the Euclidean part
             // vanishes — which it reports as "already simple" instead.
             // Fall back to the unmodified span defensively all the same.
-            let (b1, b2) = gen
-                .try_bivector_split()
-                .unwrap_or((gen, Pga::<T>::zero()));
+            let (b1, b2) = gen.try_bivector_split().unwrap_or((gen, Pga::<T>::zero()));
             let (sq1, sq2) = ((b1 * b1).scalar_part(), (b2 * b2).scalar_part());
             // The split's part order is arbitrary; the rotation is the
             // part with the strictly negative square.
@@ -774,7 +770,6 @@ mod tests {
         let moved = t.apply(&Pga3::point(0.0, 0.0, 0.0)).cleaned(1e-10);
         approx_eq(&moved.coeffs, &Pga3::point(3.0, -1.0, 2.0).coeffs, 1e-12);
     }
-
 
     #[test]
     fn rotor_about_x_axis_sends_y_to_z() {
@@ -1106,7 +1101,11 @@ mod tests {
         let plane = Pga3::basis(0b0011);
         let b = Motor::rotor(theta, plane);
         let id = Motor::identity();
-        same_motion(&id.slerp(&b, 0.5), &Motor::rotor((theta - TAU) / 2.0, plane), 1e-9);
+        same_motion(
+            &id.slerp(&b, 0.5),
+            &Motor::rotor((theta - TAU) / 2.0, plane),
+            1e-9,
+        );
         same_motion(&id.slerp(&b, 1.0), &b, 1e-9);
     }
 
@@ -1120,7 +1119,11 @@ mod tests {
         let b = Motor::rotor(theta, plane);
         let id = Motor::identity();
         for &t in &[0.5, 1.0] {
-            same_motion(&id.slerp(&b, t), &Motor::rotor(t * (theta - TAU), plane), 1e-9);
+            same_motion(
+                &id.slerp(&b, t),
+                &Motor::rotor(t * (theta - TAU), plane),
+                1e-9,
+            );
         }
     }
 
@@ -1133,7 +1136,10 @@ mod tests {
         // span.
         let plane = Pga3::basis(0b0011);
         let full = Motor::rotor(TAU, plane);
-        assert!((full.versor().coeffs[0] + 1.0).abs() < 1e-12, "versor is −1");
+        assert!(
+            (full.versor().coeffs[0] + 1.0).abs() < 1e-12,
+            "versor is −1"
+        );
         let id = Motor::identity();
         for &t in &[0.25, 0.5, 0.75, 1.0] {
             same_motion(&id.slerp(&full, t), &id, 1e-9);
@@ -1146,7 +1152,18 @@ mod tests {
         // single span sweeps at most τ/2 of rotation however much was
         // authored (|log| peaks at θ = τ/2, then *decreases* again).
         let plane = Pga3::basis(0b0011);
-        for &theta in &[0.1, 1.0, 2.0, 3.0, TAU / 2.0, 4.0, 5.0, 6.0, TAU - 1e-6, TAU] {
+        for &theta in &[
+            0.1,
+            1.0,
+            2.0,
+            3.0,
+            TAU / 2.0,
+            4.0,
+            5.0,
+            6.0,
+            TAU - 1e-6,
+            TAU,
+        ] {
             let n = Motor::rotor(theta, plane).log().norm();
             assert!(n <= TAU / 4.0 + 1e-9, "theta={theta}: |log| = {n}");
         }
@@ -1162,7 +1179,11 @@ mod tests {
             Motor::translator(1.0, 2.0, 3.0) * Motor::rotor(1.1, Pga3::basis(0b0101)),
         ];
         for m in cases {
-            approx_eq(&Motor::exp(m.log()).versor().coeffs, &m.versor().coeffs, 1e-12);
+            approx_eq(
+                &Motor::exp(m.log()).versor().coeffs,
+                &m.versor().coeffs,
+                1e-12,
+            );
         }
     }
 
@@ -1307,7 +1328,11 @@ mod tests {
     fn norm_of_any_rotor_is_one() {
         for &theta in &[0.0, 0.5, 1.0, TAU / 4.0] {
             let r = Motor::rotor(theta, Pga3::basis(0b0110));
-            assert!((r.norm() - 1.0).abs() < 1e-12, "theta={theta} norm={}", r.norm());
+            assert!(
+                (r.norm() - 1.0).abs() < 1e-12,
+                "theta={theta} norm={}",
+                r.norm()
+            );
         }
     }
 
@@ -1333,7 +1358,11 @@ mod tests {
         // Introduce artificial scale drift.
         let drifted = Motor::from_versor(m.versor() * 1.05);
         let fixed = drifted.renormalize();
-        assert!((fixed.norm_squared() - 1.0).abs() < 1e-12, "norm² = {}", fixed.norm_squared());
+        assert!(
+            (fixed.norm_squared() - 1.0).abs() < 1e-12,
+            "norm² = {}",
+            fixed.norm_squared()
+        );
     }
 
     #[test]
@@ -1351,7 +1380,11 @@ mod tests {
     fn frechet_mean_of_single_motor_is_identity_distance() {
         let m = Motor::translator(1.0, -1.0, 2.0);
         let mean = Motor::frechet_mean(&[m], 1e-8, 20);
-        assert!(mean.geodesic_distance(&m) < 1e-8, "dist = {}", mean.geodesic_distance(&m));
+        assert!(
+            mean.geodesic_distance(&m) < 1e-8,
+            "dist = {}",
+            mean.geodesic_distance(&m)
+        );
     }
 
     #[test]
@@ -1402,7 +1435,9 @@ mod tests {
         let ab = a.geodesic_distance(&b);
         let bc = b.geodesic_distance(&c);
         let ac = a.geodesic_distance(&c);
-        assert!(ac <= ab + bc + 1e-12, "triangle inequality: {ac} <= {ab} + {bc}");
+        assert!(
+            ac <= ab + bc + 1e-12,
+            "triangle inequality: {ac} <= {ab} + {bc}"
+        );
     }
 }
-

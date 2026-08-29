@@ -169,8 +169,8 @@ mod bytemuck_tests {
 mod simd_tests {
     use crate::{Conformal, Motor};
     use garust_core::{Cga3, Cga3f, Pga3, Pga3f};
-    use std::f64::consts::TAU;
     use std::f32::consts::TAU as TAU_F32;
+    use std::f64::consts::TAU;
 
     #[test]
     fn motor_apply_each_simd_matches_scalar() {
@@ -219,8 +219,8 @@ mod simd_tests {
     #[test]
     fn motor_f32_apply_each_simd_matches_scalar() {
         // 17 points: two full f32x8 chunks of 8 plus a tail of 1.
-        let m: Motor<f32> = Motor::translator(1.0, -2.0, 0.5)
-            * Motor::rotor(TAU_F32 / 8.0, Pga3f::basis(0b0110));
+        let m: Motor<f32> =
+            Motor::translator(1.0, -2.0, 0.5) * Motor::rotor(TAU_F32 / 8.0, Pga3f::basis(0b0110));
         let pts: Vec<Pga3f> = (0..17)
             .map(|i| Pga3f::point(i as f32, (i % 3) as f32 - 1.0, -(i as f32) * 0.5))
             .collect();

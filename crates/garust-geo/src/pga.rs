@@ -419,7 +419,10 @@ mod tests {
         // The vertical line through (1, 2, 0): closest point to the origin
         // has z = 0, and point_at advances by whole direction steps.
         let line = Point::new(1.0, 2.0, 0.0).join(&Point::new(1.0, 2.0, 1.0));
-        approx_xyz(line.point_closest_to_origin().to_euclidean(), (1.0, 2.0, 0.0));
+        approx_xyz(
+            line.point_closest_to_origin().to_euclidean(),
+            (1.0, 2.0, 0.0),
+        );
         approx_xyz(line.point_at(2.5).to_euclidean(), (1.0, 2.0, 2.5));
         approx_xyz(line.point_at(-1.0).to_euclidean(), (1.0, 2.0, -1.0));
     }
@@ -434,10 +437,7 @@ mod tests {
         let line = a.join(&b); // d = (3,0,0), closest = origin
         approx_xyz(line.point_at(0.0).to_euclidean(), (0.0, 0.0, 0.0));
         // t is in units of ‖d‖ = 3: t = ⅓ steps one unit along x.
-        approx_xyz(
-            line.point_at(1.0 / 3.0).to_euclidean(),
-            (1.0, 0.0, 0.0),
-        );
+        approx_xyz(line.point_at(1.0 / 3.0).to_euclidean(), (1.0, 0.0, 0.0));
     }
 
     #[test]
@@ -448,7 +448,10 @@ mod tests {
         let py = Plane::new(0.0, 1.0, 0.0, -2.0);
         let line = px.meet(&py);
         assert_eq!(line.direction(), [0.0, 0.0, -1.0]);
-        approx_xyz(line.point_closest_to_origin().to_euclidean(), (1.0, 2.0, 0.0));
+        approx_xyz(
+            line.point_closest_to_origin().to_euclidean(),
+            (1.0, 2.0, 0.0),
+        );
     }
 
     #[test]

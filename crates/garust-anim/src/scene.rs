@@ -60,7 +60,11 @@ pub struct Style {
 
 impl Default for Style {
     fn default() -> Self {
-        Self { stroke: [0, 0, 0], width: 2.0, alpha: 1.0 }
+        Self {
+            stroke: [0, 0, 0],
+            width: 2.0,
+            alpha: 1.0,
+        }
     }
 }
 
@@ -208,7 +212,11 @@ pub struct Scene {
 impl Scene {
     /// An empty scene of the given duration with the default camera.
     pub fn new(duration: f64) -> Self {
-        Self { objects: Vec::new(), camera: Camera::default(), duration }
+        Self {
+            objects: Vec::new(),
+            camera: Camera::default(),
+            duration,
+        }
     }
 
     /// Add an object; the returned handle names it for derived shapes.
@@ -295,12 +303,20 @@ mod tests {
             Projection::Orthographic { scale: 2.0 },
         ] {
             let mut scene = Scene::new(1.0);
-            scene.camera = Camera { pose: Motor::identity(), projection };
+            scene.camera = Camera {
+                pose: Motor::identity(),
+                projection,
+            };
             scene.add(Object::point(pga::Point::new(0.0, 0.0, -3.0)));
             let prims = scene.frame_at(0.0);
             assert_eq!(prims.len(), 1);
-            let Prim2::Dot(xy, _) = &prims[0] else { panic!("expected a dot") };
-            assert!(close(xy[0], 0.0) && close(xy[1], 0.0), "{projection:?}: {xy:?}");
+            let Prim2::Dot(xy, _) = &prims[0] else {
+                panic!("expected a dot")
+            };
+            assert!(
+                close(xy[0], 0.0) && close(xy[1], 0.0),
+                "{projection:?}: {xy:?}"
+            );
         }
     }
 
@@ -308,10 +324,15 @@ mod tests {
     fn pinhole_foreshortens_with_depth_orthographic_does_not() {
         let at = |proj: Projection, z: f64| {
             let mut scene = Scene::new(1.0);
-            scene.camera = Camera { pose: Motor::identity(), projection: proj };
+            scene.camera = Camera {
+                pose: Motor::identity(),
+                projection: proj,
+            };
             scene.add(Object::point(pga::Point::new(1.0, 0.0, z)));
             let prims = scene.frame_at(0.0);
-            let Prim2::Dot(xy, _) = prims[0].clone() else { panic!() };
+            let Prim2::Dot(xy, _) = prims[0].clone() else {
+                panic!()
+            };
             xy[0]
         };
         let pin = Projection::Pinhole { focal: 1.0 };
@@ -345,7 +366,9 @@ mod tests {
         };
         scene.add(Object::point(pga::Point::new(0.0, 0.0, 0.0)));
         let prims = scene.frame_at(0.0);
-        let Prim2::Dot(xy, _) = prims[0].clone() else { panic!() };
+        let Prim2::Dot(xy, _) = prims[0].clone() else {
+            panic!()
+        };
         assert!(close(xy[0], -0.2) && close(xy[1], 0.0), "{xy:?}");
     }
 
@@ -360,7 +383,9 @@ mod tests {
             ])),
         );
         let x_at = |t: f64| {
-            let Prim2::Dot(xy, _) = scene.frame_at(t)[0].clone() else { panic!() };
+            let Prim2::Dot(xy, _) = scene.frame_at(t)[0].clone() else {
+                panic!()
+            };
             xy[0]
         };
         assert!(close(x_at(0.0), 0.0));
@@ -388,7 +413,16 @@ mod tests {
         for p in prims {
             match p {
                 Prim2::Dot(xy, st) => {
-                    writeln!(s, "dot {:.9} {:.9} | {:?} {} {}", n(xy[0]), n(xy[1]), st.stroke, st.width, st.alpha).unwrap();
+                    writeln!(
+                        s,
+                        "dot {:.9} {:.9} | {:?} {} {}",
+                        n(xy[0]),
+                        n(xy[1]),
+                        st.stroke,
+                        st.width,
+                        st.alpha
+                    )
+                    .unwrap();
                 }
                 Prim2::Stroke(pts, st) => {
                     write!(s, "stroke").unwrap();
@@ -412,13 +446,17 @@ mod tests {
             projection: Projection::Pinhole { focal: 2.0 },
         };
         scene.add(
-            Object::segment(pga::Point::new(-1.0, 0.0, 0.0), pga::Point::new(1.0, 0.0, 0.0))
-                .track(Track::spin(TAU / 2.0, Pga3::basis(0b0011), 4.0).ease(Ease::SmootherStep)),
+            Object::segment(
+                pga::Point::new(-1.0, 0.0, 0.0),
+                pga::Point::new(1.0, 0.0, 0.0),
+            )
+            .track(Track::spin(TAU / 2.0, Pga3::basis(0b0011), 4.0).ease(Ease::SmootherStep)),
         );
-        scene.add(
-            Object::point(pga::Point::new(0.0, 1.0, 0.0))
-                .style(Style { stroke: [200, 40, 40], width: 3.0, alpha: 0.5 }),
-        );
+        scene.add(Object::point(pga::Point::new(0.0, 1.0, 0.0)).style(Style {
+            stroke: [200, 40, 40],
+            width: 3.0,
+            alpha: 0.5,
+        }));
 
         let got = dump(&scene.frame_at(1.0));
         // Hand-checkable: at t = 1 the eased spin has swept τ/8, so the

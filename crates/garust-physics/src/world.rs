@@ -285,10 +285,11 @@ fn world_anchor(bodies: &[Body], idx: usize, anchor_local: [f64; 3]) -> [f64; 3]
         return anchor_local;
     }
     let body = &bodies[idx];
-    let p = body
-        .rigid
-        .pose()
-        .apply(&Pga3::point(anchor_local[0], anchor_local[1], anchor_local[2]));
+    let p = body.rigid.pose().apply(&Pga3::point(
+        anchor_local[0],
+        anchor_local[1],
+        anchor_local[2],
+    ));
     pga_point_xyz(&p)
 }
 
@@ -337,7 +338,13 @@ fn eff_inv_mass(body: &Body, r: [f64; 3], n: [f64; 3]) -> f64 {
 ///
 /// The torque is computed in world frame, then rotated to body frame via
 /// `R⁻¹` before being added to the body-frame angular momentum Π.
-fn apply_joint_impulse(bodies: &mut [Body], idx: usize, n: [f64; 3], lambda: f64, world_pt: [f64; 3]) {
+fn apply_joint_impulse(
+    bodies: &mut [Body],
+    idx: usize,
+    n: [f64; 3],
+    lambda: f64,
+    world_pt: [f64; 3],
+) {
     if idx == STATIC {
         return;
     }
@@ -349,9 +356,8 @@ fn apply_joint_impulse(bodies: &mut [Body], idx: usize, n: [f64; 3], lambda: f64
     let tau_world_3d = jcross(r, [n[0] * lambda, n[1] * lambda, n[2] * lambda]);
     // Build world-frame torque bivector and rotate to body frame.
     let planes = Inertia::principal_planes();
-    let tau_world_biv = planes[0] * tau_world_3d[0]
-        + planes[1] * tau_world_3d[1]
-        + planes[2] * tau_world_3d[2];
+    let tau_world_biv =
+        planes[0] * tau_world_3d[0] + planes[1] * tau_world_3d[1] + planes[2] * tau_world_3d[2];
     let tau_body_biv = body.rigid.orientation.inverse().apply(&tau_world_biv);
     body.rigid.angular_momentum += tau_body_biv;
 }
@@ -376,17 +382,46 @@ fn solve_ball_socket(
 
     const BASIS: [[f64; 3]; 3] = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
     for (&n, &err_axis) in BASIS.iter().zip(err.iter()) {
-
         // Relative velocity at the constraint point along this axis
-        let vel_b = if b == STATIC { [0.0; 3] } else { body_vel_at(&bodies[b], wb) };
-        let vel_a = if a == STATIC { [0.0; 3] } else { body_vel_at(&bodies[a], wa) };
+        let vel_b = if b == STATIC {
+            [0.0; 3]
+        } else {
+            body_vel_at(&bodies[b], wb)
+        };
+        let vel_a = if a == STATIC {
+            [0.0; 3]
+        } else {
+            body_vel_at(&bodies[a], wa)
+        };
         let v_rel = jdot(jsub(vel_b, vel_a), n);
 
         // Effective inverse mass
-        let r_b = jsub(wb, if b == STATIC { wb } else { bodies[b].rigid.position });
-        let r_a = jsub(wa, if a == STATIC { wa } else { bodies[a].rigid.position });
-        let inv_b = if b == STATIC { 0.0 } else { eff_inv_mass(&bodies[b], r_b, n) };
-        let inv_a = if a == STATIC { 0.0 } else { eff_inv_mass(&bodies[a], r_a, n) };
+        let r_b = jsub(
+            wb,
+            if b == STATIC {
+                wb
+            } else {
+                bodies[b].rigid.position
+            },
+        );
+        let r_a = jsub(
+            wa,
+            if a == STATIC {
+                wa
+            } else {
+                bodies[a].rigid.position
+            },
+        );
+        let inv_b = if b == STATIC {
+            0.0
+        } else {
+            eff_inv_mass(&bodies[b], r_b, n)
+        };
+        let inv_a = if a == STATIC {
+            0.0
+        } else {
+            eff_inv_mass(&bodies[a], r_a, n)
+        };
         let inv_total = inv_a + inv_b;
         if inv_total < 1e-30 {
             continue;
@@ -418,14 +453,24 @@ struct PrismaticGeom {
 }
 
 fn solve_prismatic(bodies: &mut [Body], g: &PrismaticGeom, dt: f64, baumgarte: f64) {
-    let PrismaticGeom { a, b, anchor_a, anchor_b, axis } = *g;
+    let PrismaticGeom {
+        a,
+        b,
+        anchor_a,
+        anchor_b,
+        axis,
+    } = *g;
     let wa = world_anchor(bodies, a, anchor_a);
     // World-frame axis: transform a second anchor offset by `axis` and
     // subtract — reuses the point path, so it is uniform over `STATIC`.
     let wa2 = world_anchor(
         bodies,
         a,
-        [anchor_a[0] + axis[0], anchor_a[1] + axis[1], anchor_a[2] + axis[2]],
+        [
+            anchor_a[0] + axis[0],
+            anchor_a[1] + axis[1],
+            anchor_a[2] + axis[2],
+        ],
     );
     let d = jsub(wa2, wa);
     // Calificado en vez de `use garust_core::Real`: bajo std ese import
@@ -438,7 +483,11 @@ fn solve_prismatic(bodies: &mut [Body], g: &PrismaticGeom, dt: f64, baumgarte: f
     let d = [d[0] / len, d[1] / len, d[2] / len];
 
     // Orthonormal pair spanning the plane perpendicular to the axis.
-    let pick = if d[0].abs() < 0.9 { [1.0, 0.0, 0.0] } else { [0.0, 1.0, 0.0] };
+    let pick = if d[0].abs() < 0.9 {
+        [1.0, 0.0, 0.0]
+    } else {
+        [0.0, 1.0, 0.0]
+    };
     let c = jcross(d, pick);
     let clen = garust_core::Real::sqrt(jdot(c, c));
     let n1 = [c[0] / clen, c[1] / clen, c[2] / clen];
@@ -448,14 +497,44 @@ fn solve_prismatic(bodies: &mut [Body], g: &PrismaticGeom, dt: f64, baumgarte: f
     let err = jsub(wb, wa);
 
     for n in [n1, n2] {
-        let vel_b = if b == STATIC { [0.0; 3] } else { body_vel_at(&bodies[b], wb) };
-        let vel_a = if a == STATIC { [0.0; 3] } else { body_vel_at(&bodies[a], wa) };
+        let vel_b = if b == STATIC {
+            [0.0; 3]
+        } else {
+            body_vel_at(&bodies[b], wb)
+        };
+        let vel_a = if a == STATIC {
+            [0.0; 3]
+        } else {
+            body_vel_at(&bodies[a], wa)
+        };
         let v_rel = jdot(jsub(vel_b, vel_a), n);
 
-        let r_b = jsub(wb, if b == STATIC { wb } else { bodies[b].rigid.position });
-        let r_a = jsub(wa, if a == STATIC { wa } else { bodies[a].rigid.position });
-        let inv_b = if b == STATIC { 0.0 } else { eff_inv_mass(&bodies[b], r_b, n) };
-        let inv_a = if a == STATIC { 0.0 } else { eff_inv_mass(&bodies[a], r_a, n) };
+        let r_b = jsub(
+            wb,
+            if b == STATIC {
+                wb
+            } else {
+                bodies[b].rigid.position
+            },
+        );
+        let r_a = jsub(
+            wa,
+            if a == STATIC {
+                wa
+            } else {
+                bodies[a].rigid.position
+            },
+        );
+        let inv_b = if b == STATIC {
+            0.0
+        } else {
+            eff_inv_mass(&bodies[b], r_b, n)
+        };
+        let inv_a = if a == STATIC {
+            0.0
+        } else {
+            eff_inv_mass(&bodies[a], r_a, n)
+        };
         let inv_total = inv_a + inv_b;
         if inv_total < 1e-30 {
             continue;
@@ -477,12 +556,35 @@ fn solve_joints(bodies: &mut [Body], joints: &[Joint], dt: f64) {
     for _ in 0..N_ITER {
         for joint in joints {
             match *joint {
-                Joint::Hinge { a, b, anchor_a, anchor_b, .. }
-                | Joint::Fixed { a, b, anchor_a, anchor_b } => {
+                Joint::Hinge {
+                    a,
+                    b,
+                    anchor_a,
+                    anchor_b,
+                    ..
+                }
+                | Joint::Fixed {
+                    a,
+                    b,
+                    anchor_a,
+                    anchor_b,
+                } => {
                     solve_ball_socket(bodies, a, b, anchor_a, anchor_b, dt, BAUMGARTE);
                 }
-                Joint::Prismatic { a, b, anchor_a, anchor_b, axis } => {
-                    let geom = PrismaticGeom { a, b, anchor_a, anchor_b, axis };
+                Joint::Prismatic {
+                    a,
+                    b,
+                    anchor_a,
+                    anchor_b,
+                    axis,
+                } => {
+                    let geom = PrismaticGeom {
+                        a,
+                        b,
+                        anchor_a,
+                        anchor_b,
+                        axis,
+                    };
                     solve_prismatic(bodies, &geom, dt, BAUMGARTE);
                 }
             }
@@ -658,8 +760,8 @@ mod tests {
     fn pendulum_period_matches_analytic_value() {
         use super::{Joint, STATIC};
         use core::f64::consts::TAU;
-        use garust_geo::Motor;
         use garust_core::Pga3;
+        use garust_geo::Motor;
 
         let g = 9.81_f64;
         let ell = 1.0_f64;
@@ -763,7 +865,10 @@ mod tests {
         }
         let p = bodies[0].rigid.position;
         assert!((p[0] - 1.0).abs() < 1e-9, "x = {} (want 1.0)", p[0]);
-        assert!(p[1].abs() < 1e-9 && p[2].abs() < 1e-9, "drifted off axis: {p:?}");
+        assert!(
+            p[1].abs() < 1e-9 && p[2].abs() < 1e-9,
+            "drifted off axis: {p:?}"
+        );
         assert!(
             (bodies[0].rigid.linear_momentum[0] - 2.0).abs() < 1e-9,
             "axis momentum was not conserved"
@@ -825,7 +930,11 @@ mod tests {
         }
         let p = bodies[0].rigid.position;
         assert!(p[1].abs() < 1e-3, "not recentered: y = {}", p[1]);
-        assert!((p[0] - 0.3).abs() < 1e-6, "picked up axis drift: x = {}", p[0]);
+        assert!(
+            (p[0] - 0.3).abs() < 1e-6,
+            "picked up axis drift: x = {}",
+            p[0]
+        );
     }
 
     /// Gravity along the slide axis passes straight through: the body falls
