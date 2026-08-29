@@ -114,7 +114,11 @@ impl Sphere {
             self.center[1] - normal[1] * self.radius,
             self.center[2] - normal[2] * self.radius,
         ];
-        Some(Contact { normal, depth, point: pt })
+        Some(Contact {
+            normal,
+            depth,
+            point: pt,
+        })
     }
 }
 
@@ -175,7 +179,11 @@ pub fn resolve_pair(
         let v_tang_len_sq = dot(v_tang, v_tang);
         if v_tang_len_sq > 1e-24 {
             let v_tang_len = garust_core::Real::sqrt(v_tang_len_sq);
-            let t = [v_tang[0] / v_tang_len, v_tang[1] / v_tang_len, v_tang[2] / v_tang_len];
+            let t = [
+                v_tang[0] / v_tang_len,
+                v_tang[1] / v_tang_len,
+                v_tang[2] / v_tang_len,
+            ];
             let jt = (j * mu).min(inv_mass * v_tang_len / inv_mass);
             let ft = [t[0] * jt, t[1] * jt, t[2] * jt];
             for ((pa, pb), &f) in a
@@ -229,7 +237,11 @@ pub fn resolve_static(body: &mut RigidBody, contact: &Contact, restitution: f64,
         let v_tang_len_sq = dot(v_tang, v_tang);
         if v_tang_len_sq > 1e-24 {
             let v_tang_len = garust_core::Real::sqrt(v_tang_len_sq);
-            let t = [v_tang[0] / v_tang_len, v_tang[1] / v_tang_len, v_tang[2] / v_tang_len];
+            let t = [
+                v_tang[0] / v_tang_len,
+                v_tang[1] / v_tang_len,
+                v_tang[2] / v_tang_len,
+            ];
             let jt = (j * mu).min(body.mass * v_tang_len);
             let ft = [t[0] * jt, t[1] * jt, t[2] * jt];
             for (p, &f) in body.linear_momentum.iter_mut().zip(ft.iter()) {
@@ -338,7 +350,12 @@ fn cross_div(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
 
 /// Closest-point algorithm for two lines given as (point, direction) pairs.
 /// Returns (distance, point_on_line1, point_on_line2).
-fn skew_closest(p1: [f64; 3], d1: [f64; 3], p2: [f64; 3], d2: [f64; 3]) -> (f64, [f64; 3], [f64; 3]) {
+fn skew_closest(
+    p1: [f64; 3],
+    d1: [f64; 3],
+    p2: [f64; 3],
+    d2: [f64; 3],
+) -> (f64, [f64; 3], [f64; 3]) {
     let w = sub(p1, p2);
     let a = dot(d1, d1);
     let b = dot(d1, d2);

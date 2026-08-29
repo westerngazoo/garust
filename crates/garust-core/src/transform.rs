@@ -597,10 +597,22 @@ mod tests {
         let b = e12 * eps + e03 * 0.635;
         let (b1, b2) = b.try_bivector_split().expect("well-defined split");
         // One part is the Euclidean plane, the other the null translation.
-        let (eucl, null) = if b1.coeffs[3].abs() > 1e-12 { (b1, b2) } else { (b2, b1) };
-        assert!((eucl.coeffs[3] - eps).abs() < 1e-12, "e12 part: {}", eucl.coeffs[3]);
+        let (eucl, null) = if b1.coeffs[3].abs() > 1e-12 {
+            (b1, b2)
+        } else {
+            (b2, b1)
+        };
+        assert!(
+            (eucl.coeffs[3] - eps).abs() < 1e-12,
+            "e12 part: {}",
+            eucl.coeffs[3]
+        );
         // Canonical blade 12 is e3e0, and e0·e3 = −(e3·e0).
-        assert!((null.coeffs[12] + 0.635).abs() < 1e-9, "e03 part: {}", null.coeffs[12]);
+        assert!(
+            (null.coeffs[12] + 0.635).abs() < 1e-9,
+            "e03 part: {}",
+            null.coeffs[12]
+        );
     }
 
     #[test]

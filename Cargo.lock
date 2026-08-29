@@ -219,9 +219,19 @@ checksum = "d9c4f5dac5e15c24eb999c26181a6ca40b39fe946cbe4c263c7209467bc83af2"
 name = "garust"
 version = "0.1.0"
 dependencies = [
+ "garust-anim",
  "garust-core",
  "garust-geo",
  "garust-physics",
+]
+
+[[package]]
+name = "garust-anim"
+version = "0.1.0"
+dependencies = [
+ "garust-core",
+ "garust-geo",
+ "proptest",
 ]
 
 [[package]]
