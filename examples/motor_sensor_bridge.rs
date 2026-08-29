@@ -2,10 +2,7 @@
 //! Run: cargo run --example motor_sensor_bridge
 
 use garust_core::Pga3;
-use garust_geo::{
-    pga::Point,
-    Motor,
-};
+use garust_geo::{pga::Point, Motor};
 use std::f64::consts::TAU;
 
 fn main() {
@@ -15,7 +12,11 @@ fn main() {
     println!("--- from_unit_quaternion ---");
 
     let id = Motor::<f64>::from_unit_quaternion(1.0, 0.0, 0.0, 0.0);
-    assert_eq!(id, Motor::identity(), "identity quaternion must give identity motor");
+    assert_eq!(
+        id,
+        Motor::identity(),
+        "identity quaternion must give identity motor"
+    );
     println!("  (1,0,0,0) → identity  ✓");
 
     // 90° about x-axis: (0,1,0) → (0,0,1)
@@ -24,33 +25,45 @@ fn main() {
     let s = half.sin();
     let rx = Motor::<f64>::from_unit_quaternion(c, s, 0.0, 0.0);
     let (_, y, z) = Point::from_multivector(rx.apply(&Pga3::point(0.0, 1.0, 0.0))).to_euclidean();
-    assert!(y.abs() < 1e-10 && (z - 1.0).abs() < 1e-10,
-        "x-axis 90° should send (0,1,0)→(0,0,1), got y={y}, z={z}");
+    assert!(
+        y.abs() < 1e-10 && (z - 1.0).abs() < 1e-10,
+        "x-axis 90° should send (0,1,0)→(0,0,1), got y={y}, z={z}"
+    );
     println!("  x-axis 90°: (0,1,0) → (0,{y:.3},{z:.3})  ✓");
 
     // 90° about y-axis: (0,0,1) → (1,0,0)
     let ry = Motor::<f64>::from_unit_quaternion(c, 0.0, s, 0.0);
     let (x, _, z) = Point::from_multivector(ry.apply(&Pga3::point(0.0, 0.0, 1.0))).to_euclidean();
-    assert!((x - 1.0).abs() < 1e-10 && z.abs() < 1e-10,
-        "y-axis 90° should send (0,0,1)→(1,0,0), got x={x}, z={z}");
+    assert!(
+        (x - 1.0).abs() < 1e-10 && z.abs() < 1e-10,
+        "y-axis 90° should send (0,0,1)→(1,0,0), got x={x}, z={z}"
+    );
     println!("  y-axis 90°: (0,0,1) → ({x:.3},0,{z:.3})  ✓");
 
     // 90° about z-axis: (1,0,0) → (0,1,0)
     let rz = Motor::<f64>::from_unit_quaternion(c, 0.0, 0.0, s);
     let (x, y, _) = Point::from_multivector(rz.apply(&Pga3::point(1.0, 0.0, 0.0))).to_euclidean();
-    assert!(x.abs() < 1e-10 && (y - 1.0).abs() < 1e-10,
-        "z-axis 90° should send (1,0,0)→(0,1,0), got x={x}, y={y}");
+    assert!(
+        x.abs() < 1e-10 && (y - 1.0).abs() < 1e-10,
+        "z-axis 90° should send (1,0,0)→(0,1,0), got x={x}, y={y}"
+    );
     println!("  z-axis 90°: (1,0,0) → ({x:.3},{y:.3},0)  ✓");
 
     // ── #33  norm ──────────────────────────────────────────────────────────────
     println!("\n--- norm ---");
     let n_id = Motor::<f64>::identity().norm();
-    assert!((n_id - 1.0).abs() < 1e-12, "identity norm should be 1.0, got {n_id}");
+    assert!(
+        (n_id - 1.0).abs() < 1e-12,
+        "identity norm should be 1.0, got {n_id}"
+    );
     println!("  identity.norm() = {n_id:.15}  ✓");
 
     let m = Motor::translator(3.0, -1.0, 2.0) * Motor::rotor(0.7, Pga3::basis(0b0110));
     let n = m.norm();
-    assert!((n - 1.0).abs() < 1e-12, "composed motor norm should be 1.0, got {n}");
+    assert!(
+        (n - 1.0).abs() < 1e-12,
+        "composed motor norm should be 1.0, got {n}"
+    );
     println!("  (translate * rotor).norm() = {n:.15}  ✓");
 
     // ── #35  renormalize ──────────────────────────────────────────────────────
@@ -58,15 +71,24 @@ fn main() {
     let base = Motor::rotor(1.2, Pga3::basis(0b0011)) * Motor::translator(0.5, -0.5, 1.0);
     // Introduce drift (isotropic scale)
     let drifted = Motor::from_versor(base.versor() * 1.08);
-    println!("  before renormalize: norm² = {:.8}", drifted.norm_squared());
+    println!(
+        "  before renormalize: norm² = {:.8}",
+        drifted.norm_squared()
+    );
     let fixed = drifted.renormalize();
     let n2 = fixed.norm_squared();
-    assert!((n2 - 1.0).abs() < 1e-12, "after renormalize norm² should be 1.0, got {n2}");
+    assert!(
+        (n2 - 1.0).abs() < 1e-12,
+        "after renormalize norm² should be 1.0, got {n2}"
+    );
     println!("  after  renormalize: norm² = {n2:.15}  ✓");
 
     // idempotent
     let n2_twice = fixed.renormalize().norm_squared();
-    assert!((n2_twice - 1.0).abs() < 1e-12, "renormalize idempotent failed, got {n2_twice}");
+    assert!(
+        (n2_twice - 1.0).abs() < 1e-12,
+        "renormalize idempotent failed, got {n2_twice}"
+    );
     println!("  idempotent:         norm² = {n2_twice:.15}  ✓");
 
     // ── #36  geodesic_distance ────────────────────────────────────────────────
@@ -80,15 +102,20 @@ fn main() {
 
     let dab = a.geodesic_distance(&b);
     let dba = b.geodesic_distance(&a);
-    assert!((dab - dba).abs() < 1e-12, "symmetry broken: d(a,b)={dab} d(b,a)={dba}");
+    assert!(
+        (dab - dba).abs() < 1e-12,
+        "symmetry broken: d(a,b)={dab} d(b,a)={dba}"
+    );
     println!("  d(a,b) = {dab:.8},  d(b,a) = {dba:.8}  symmetric ✓");
 
     // triangle inequality
     let mid = a.slerp(&b, 0.5);
     let d_a_mid = a.geodesic_distance(&mid);
     let d_mid_b = mid.geodesic_distance(&b);
-    assert!(dab <= d_a_mid + d_mid_b + 1e-12,
-        "triangle inequality: {dab} > {d_a_mid} + {d_mid_b}");
+    assert!(
+        dab <= d_a_mid + d_mid_b + 1e-12,
+        "triangle inequality: {dab} > {d_a_mid} + {d_mid_b}"
+    );
     println!("  triangle: {dab:.6} ≤ {d_a_mid:.6} + {d_mid_b:.6}  ✓");
 
     // ── #34  frechet_mean ─────────────────────────────────────────────────────
@@ -121,9 +148,13 @@ fn main() {
     let avg = angles.iter().sum::<f64>() / angles.len() as f64;
     let expected = Motor::rotor(avg, plane);
     let p2 = Pga3::point(0.0, 1.0, 0.0);
-    let err2: f64 = mean_m.apply(&p2).coeffs.iter()
+    let err2: f64 = mean_m
+        .apply(&p2)
+        .coeffs
+        .iter()
         .zip(expected.apply(&p2).coeffs.iter())
-        .map(|(a, b)| (a - b).abs()).sum();
+        .map(|(a, b)| (a - b).abs())
+        .sum();
     assert!(err2 < 1e-7, "subgroup mean err = {err2}, avg_angle = {avg}");
     println!("  subgroup mean (avg θ={avg:.1}) err = {err2:.2e}  ✓");
 
