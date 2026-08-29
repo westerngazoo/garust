@@ -473,7 +473,10 @@ fn solve_prismatic(bodies: &mut [Body], g: &PrismaticGeom, dt: f64, baumgarte: f
         ],
     );
     let d = jsub(wa2, wa);
-    let len = jdot(d, d).sqrt();
+    // Calificado en vez de `use garust_core::Real`: bajo std ese import
+    // queda muerto y `-D warnings` lo rechaza. Mismo patrón que
+    // chain.rs:201, que arregló este mismo rompimiento en geo.
+    let len = garust_core::Real::sqrt(jdot(d, d));
     if len < 1e-12 {
         return; // degenerate axis: nothing well-defined to constrain
     }
@@ -486,7 +489,7 @@ fn solve_prismatic(bodies: &mut [Body], g: &PrismaticGeom, dt: f64, baumgarte: f
         [0.0, 1.0, 0.0]
     };
     let c = jcross(d, pick);
-    let clen = jdot(c, c).sqrt();
+    let clen = garust_core::Real::sqrt(jdot(c, c));
     let n1 = [c[0] / clen, c[1] / clen, c[2] / clen];
     let n2 = jcross(d, n1);
 
