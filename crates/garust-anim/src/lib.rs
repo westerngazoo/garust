@@ -117,7 +117,11 @@ impl Track {
             .windows(2)
             .map(|w| w[0].1.screw_generator(&w[1].1))
             .collect();
-        Self { keys, gens, ease: Ease::Linear }
+        Self {
+            keys,
+            gens,
+            ease: Ease::Linear,
+        }
     }
 
     /// Set the easing curve shared by every span (builder-style).
@@ -293,8 +297,14 @@ mod tests {
         let half = track.sample(2.0).apply(&p);
         let want_h = Motor::rotor(TAU / 2.0, plane(0)).apply(&p);
         for i in 0..16 {
-            assert!((quarter.coeffs[i] - want_q.coeffs[i]).abs() < 1e-9, "quarter, coeff {i}");
-            assert!((half.coeffs[i] - want_h.coeffs[i]).abs() < 1e-9, "half, coeff {i}");
+            assert!(
+                (quarter.coeffs[i] - want_q.coeffs[i]).abs() < 1e-9,
+                "quarter, coeff {i}"
+            );
+            assert!(
+                (half.coeffs[i] - want_h.coeffs[i]).abs() < 1e-9,
+                "half, coeff {i}"
+            );
         }
         // And the full turn arrives back at the identity *motion*.
         assert!(track.sample(4.0).geodesic_distance(&Motor::identity()) < 1e-9);

@@ -52,7 +52,9 @@ macro_rules! simd_sandwich_each_f64 {
                 let mut t = [f64x4::splat(0.0); DIM];
                 for i in 0..DIM {
                     let vi = v[i];
-                    if vi == 0.0 { continue; }
+                    if vi == 0.0 {
+                        continue;
+                    }
                     let row = i * DIM;
                     for j in 0..DIM {
                         let (idx, sign) = table[row + j];
@@ -67,7 +69,9 @@ macro_rules! simd_sandwich_each_f64 {
                     let row = i * DIM;
                     for j in 0..DIM {
                         let rj = rev[j];
-                        if rj == 0.0 { continue; }
+                        if rj == 0.0 {
+                            continue;
+                        }
                         let (idx, sign) = table[row + j];
                         if sign != 0 {
                             r[idx as usize] += ti * f64x4::splat(rj * sign as f64);
@@ -129,7 +133,9 @@ macro_rules! simd_sandwich_each_f32 {
                 let mut t = [f32x8::splat(0.0); DIM];
                 for i in 0..DIM {
                     let vi = v[i];
-                    if vi == 0.0 { continue; }
+                    if vi == 0.0 {
+                        continue;
+                    }
                     let row = i * DIM;
                     for j in 0..DIM {
                         let (idx, sign) = table[row + j];
@@ -144,7 +150,9 @@ macro_rules! simd_sandwich_each_f32 {
                     let row = i * DIM;
                     for j in 0..DIM {
                         let rj = rev[j];
-                        if rj == 0.0 { continue; }
+                        if rj == 0.0 {
+                            continue;
+                        }
                         let (idx, sign) = table[row + j];
                         if sign != 0 {
                             r[idx as usize] += ti * f32x8::splat(rj * sign as f32);
