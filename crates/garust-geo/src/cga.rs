@@ -174,7 +174,7 @@ impl<T: Scalar> Plane<T> {
         }
     }
 
-    /// The scalar product `p · π` — **zero exactly when `p` lies on the
+    /// The scalar product `p · flat` — **zero exactly when `p` lies on the
     /// plane** (scaled by the point's weight and the normal's length),
     /// with a sign that says which side. Compare it against a tolerance;
     /// [`Plane::contains`] does.
