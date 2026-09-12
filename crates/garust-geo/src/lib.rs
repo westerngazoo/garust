@@ -27,6 +27,7 @@
 
 pub mod cga;
 pub mod chain;
+pub mod tree;
 pub mod conformal;
 pub mod motor;
 pub mod pga;
