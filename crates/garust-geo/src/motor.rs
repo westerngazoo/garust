@@ -371,6 +371,20 @@ impl<T: Real> Motor<T> {
     /// `line` must be a genuine line (a 2-blade) with non-zero
     /// Euclidean weight, so that `L̂² = −1` and the closed-form
     /// exponential applies.
+    ///
+    /// # Which way it turns
+    ///
+    /// The `exp(−½·θ·L̂)` above fixes the handedness, but reading a sign
+    /// out of an exponential is not how anybody checks their own code, so
+    /// here it is as an observation: **about the +z line, a positive angle
+    /// carries `+x` toward `−y`** — the opposite of the right-hand rule a
+    /// reader is likely to assume.
+    ///
+    /// Nothing here is wrong; that convention is a normal choice. But it
+    /// is invisible in any test that compares magnitudes or compares the
+    /// engine against itself, which is how it went unnoticed through
+    /// hundreds of them. It is pinned in `physics-lab/oraculos`, against a
+    /// two-link arm whose answer is a drawing on a napkin.
     pub fn rotation_about(line: Pga<T>, radians: T) -> Self {
         let unit = line.normalized();
         let versor = (unit * (radians * T::from_f64(-0.5))).exp();
