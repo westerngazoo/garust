@@ -54,7 +54,10 @@ fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
 }
 
 fn norm(a: [f64; 3]) -> f64 {
-    dot(a, a).sqrt()
+    // Cualificado a propósito: `f64::sqrt` es un método inherente de
+    // std y no existe en `no_std` + libm. `chain.rs` ya lo advierte —
+    // quitarlo rompió esa build una vez.
+    garust_core::Real::sqrt(dot(a, a))
 }
 
 /// The middle joint of a two-link limb, on the side `hint` points to.
@@ -117,7 +120,7 @@ pub fn two_link_joint(
     let w = [w[0] / wn, w[1] / wn, w[2] / wn];
 
     let a = (d * d + l1 * l1 - l2 * l2) / (2.0 * d);
-    let h = (l1 * l1 - a * a).max(0.0).sqrt();
+    let h = garust_core::Real::sqrt((l1 * l1 - a * a).max(0.0));
     Ok([
         root[0] + a * u[0] + h * w[0],
         root[1] + a * u[1] + h * w[1],
@@ -159,8 +162,16 @@ mod tests {
         let (l1, l2) = (0.34, 0.31);
         let atras = two_link_joint(root, tip, l1, l2, [-1.0, 0.0, 0.0]).unwrap();
         let frente = two_link_joint(root, tip, l1, l2, [1.0, 0.0, 0.0]).unwrap();
-        assert!(atras[0] < -1e-3, "el codo va atrás, quedó en x={}", atras[0]);
-        assert!(frente[0] > 1e-3, "y adelante cuando se pide, x={}", frente[0]);
+        assert!(
+            atras[0] < -1e-3,
+            "el codo va atrás, quedó en x={}",
+            atras[0]
+        );
+        assert!(
+            frente[0] > 1e-3,
+            "y adelante cuando se pide, x={}",
+            frente[0]
+        );
         // y son espejo: la misma altura, que es justo por lo que la regla
         // implícita no podía decidir
         assert!((atras[1] - frente[1]).abs() < 1e-12);
@@ -169,7 +180,13 @@ mod tests {
     /// A hint that names no side is refused, not guessed.
     #[test]
     fn a_hint_along_the_axis_is_refused() {
-        let e = two_link_joint([0.0, 1.0, 0.0], [0.0, 0.4, 0.0], 0.34, 0.31, [0.0, -1.0, 0.0]);
+        let e = two_link_joint(
+            [0.0, 1.0, 0.0],
+            [0.0, 0.4, 0.0],
+            0.34,
+            0.31,
+            [0.0, -1.0, 0.0],
+        );
         assert_eq!(e, Err(TwoLinkError::HintAlongAxis));
     }
 

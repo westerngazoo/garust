@@ -112,7 +112,8 @@ impl Load for Cable {
             self.pulley[1] - at[1],
             self.pulley[2] - at[2],
         ];
-        let n = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+        // Cualificado: `f64::sqrt` no existe en `no_std` + libm.
+        let n = garust_core::Real::sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
         // At the pulley itself the direction is undefined. Zero is the
         // honest answer: a cable of zero length exerts no line of action,
         // and guessing one would put a torque where there is none.

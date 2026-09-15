@@ -27,11 +27,11 @@
 
 pub mod cga;
 pub mod chain;
-pub mod tree;
-pub mod twolink;
 pub mod conformal;
 pub mod motor;
 pub mod pga;
+pub mod tree;
+pub mod twolink;
 
 // SoA SIMD batch transforms, behind the `simd` feature. Private: it only
 // backs the `apply_each_simd` methods on `Motor`/`Conformal`.

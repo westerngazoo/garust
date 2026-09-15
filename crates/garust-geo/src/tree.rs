@@ -151,14 +151,35 @@ mod tests {
     fn a_degenerate_tree_is_a_chain() {
         let z = z_axis();
         let links = [
-            Link { offset: Motor::identity(), joint: ChainJoint::Revolute(z) },
-            Link { offset: Motor::translator(1.0, 0.0, 0.0), joint: ChainJoint::Revolute(z) },
-            Link { offset: Motor::translator(0.7, 0.0, 0.0), joint: ChainJoint::Revolute(z) },
+            Link {
+                offset: Motor::identity(),
+                joint: ChainJoint::Revolute(z),
+            },
+            Link {
+                offset: Motor::translator(1.0, 0.0, 0.0),
+                joint: ChainJoint::Revolute(z),
+            },
+            Link {
+                offset: Motor::translator(0.7, 0.0, 0.0),
+                joint: ChainJoint::Revolute(z),
+            },
         ];
         let tree_links = [
-            TreeLink { parent: None, offset: links[0].offset, joint: links[0].joint },
-            TreeLink { parent: Some(0), offset: links[1].offset, joint: links[1].joint },
-            TreeLink { parent: Some(1), offset: links[2].offset, joint: links[2].joint },
+            TreeLink {
+                parent: None,
+                offset: links[0].offset,
+                joint: links[0].joint,
+            },
+            TreeLink {
+                parent: Some(0),
+                offset: links[1].offset,
+                joint: links[1].joint,
+            },
+            TreeLink {
+                parent: Some(1),
+                offset: links[2].offset,
+                joint: links[2].joint,
+            },
         ];
         let chain = Chain::new(&links);
         let tree = Tree::new(&tree_links);
@@ -181,23 +202,38 @@ mod tests {
     fn branches_do_not_drag_each_other() {
         let z = z_axis();
         let links = [
-            TreeLink { parent: None, offset: Motor::identity(), joint: ChainJoint::Revolute(z) },
-            TreeLink { parent: Some(0), offset: Motor::translator(1.0, 0.0, 0.0), joint: ChainJoint::Revolute(z) },
-            TreeLink { parent: Some(0), offset: Motor::translator(-1.0, 0.0, 0.0), joint: ChainJoint::Revolute(z) },
+            TreeLink {
+                parent: None,
+                offset: Motor::identity(),
+                joint: ChainJoint::Revolute(z),
+            },
+            TreeLink {
+                parent: Some(0),
+                offset: Motor::translator(1.0, 0.0, 0.0),
+                joint: ChainJoint::Revolute(z),
+            },
+            TreeLink {
+                parent: Some(0),
+                offset: Motor::translator(-1.0, 0.0, 0.0),
+                joint: ChainJoint::Revolute(z),
+            },
         ];
         let tree = Tree::new(&links);
         let mut a = [Motor::identity(); 3];
         let mut b = [Motor::identity(); 3];
         tree.fk(&[0.0, 0.5, 0.2], &mut a);
         tree.fk(&[0.0, 1.9, 0.2], &mut b); // sólo se mueve la rama 1
-        // Se mide un punto FUERA del eje. Una revoluta no mueve el origen
-        // de su propio marco -- mueve lo que cuelga de él -- así que
-        // probar en el origen habría pasado sin probar nada.
+                                           // Se mide un punto FUERA del eje. Una revoluta no mueve el origen
+                                           // de su propio marco -- mueve lo que cuelga de él -- así que
+                                           // probar en el origen habría pasado sin probar nada.
         let sonda = Pga3::point(0.5, 0.0, 0.0);
         let pa = a[2].apply(&sonda);
         let pb = b[2].apply(&sonda);
         for k in 0..16 {
-            assert!((pa.coeffs[k] - pb.coeffs[k]).abs() < 1e-12, "branch 2 moved");
+            assert!(
+                (pa.coeffs[k] - pb.coeffs[k]).abs() < 1e-12,
+                "branch 2 moved"
+            );
         }
         let qa = a[1].apply(&sonda);
         let qb = b[1].apply(&sonda);
@@ -212,9 +248,21 @@ mod tests {
     fn the_root_carries_its_branches() {
         let z = z_axis();
         let links = [
-            TreeLink { parent: None, offset: Motor::identity(), joint: ChainJoint::Revolute(z) },
-            TreeLink { parent: Some(0), offset: Motor::translator(1.0, 0.0, 0.0), joint: ChainJoint::Revolute(z) },
-            TreeLink { parent: Some(0), offset: Motor::translator(-1.0, 0.0, 0.0), joint: ChainJoint::Revolute(z) },
+            TreeLink {
+                parent: None,
+                offset: Motor::identity(),
+                joint: ChainJoint::Revolute(z),
+            },
+            TreeLink {
+                parent: Some(0),
+                offset: Motor::translator(1.0, 0.0, 0.0),
+                joint: ChainJoint::Revolute(z),
+            },
+            TreeLink {
+                parent: Some(0),
+                offset: Motor::translator(-1.0, 0.0, 0.0),
+                joint: ChainJoint::Revolute(z),
+            },
         ];
         let tree = Tree::new(&links);
         let mut a = [Motor::identity(); 3];
@@ -237,16 +285,35 @@ mod tests {
     fn distal_is_everything_below() {
         let z = z_axis();
         let links = [
-            TreeLink { parent: None, offset: Motor::identity(), joint: ChainJoint::Revolute(z) },
-            TreeLink { parent: Some(0), offset: Motor::identity(), joint: ChainJoint::Revolute(z) },
-            TreeLink { parent: Some(1), offset: Motor::identity(), joint: ChainJoint::Revolute(z) },
-            TreeLink { parent: Some(0), offset: Motor::identity(), joint: ChainJoint::Revolute(z) },
+            TreeLink {
+                parent: None,
+                offset: Motor::identity(),
+                joint: ChainJoint::Revolute(z),
+            },
+            TreeLink {
+                parent: Some(0),
+                offset: Motor::identity(),
+                joint: ChainJoint::Revolute(z),
+            },
+            TreeLink {
+                parent: Some(1),
+                offset: Motor::identity(),
+                joint: ChainJoint::Revolute(z),
+            },
+            TreeLink {
+                parent: Some(0),
+                offset: Motor::identity(),
+                joint: ChainJoint::Revolute(z),
+            },
         ];
         let tree = Tree::new(&links);
         assert!(tree.is_distal_to(2, 0), "the whole tree hangs off the root");
         assert!(tree.is_distal_to(2, 1));
         assert!(!tree.is_distal_to(3, 1), "a sibling is not distal");
-        assert!(!tree.is_distal_to(0, 2), "a parent is not distal to its child");
+        assert!(
+            !tree.is_distal_to(0, 2),
+            "a parent is not distal to its child"
+        );
         assert!(tree.is_distal_to(1, 1), "a link is distal to itself");
     }
 
@@ -256,8 +323,16 @@ mod tests {
     fn out_of_order_links_are_refused() {
         let z = z_axis();
         let links = [
-            TreeLink { parent: Some(1), offset: Motor::identity(), joint: ChainJoint::Revolute(z) },
-            TreeLink { parent: None, offset: Motor::identity(), joint: ChainJoint::Revolute(z) },
+            TreeLink {
+                parent: Some(1),
+                offset: Motor::identity(),
+                joint: ChainJoint::Revolute(z),
+            },
+            TreeLink {
+                parent: None,
+                offset: Motor::identity(),
+                joint: ChainJoint::Revolute(z),
+            },
         ];
         let _ = Tree::new(&links);
     }

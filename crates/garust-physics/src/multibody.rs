@@ -87,7 +87,7 @@ pub fn joint_torque_magnitude(
     joint: usize,
 ) -> f64 {
     let t = joint_torque(tree, poses, loads, joint);
-    (t[0] * t[0] + t[1] * t[1] + t[2] * t[2]).sqrt()
+    garust_core::Real::sqrt(t[0] * t[0] + t[1] * t[1] + t[2] * t[2])
 }
 
 /// The **generalized** force at joint `j`: what that joint's own degree of
@@ -120,7 +120,7 @@ pub fn generalized_torque(
     debug_assert!(h > 0.0, "the step must be positive");
     scratch.copy_from_slice(q);
 
-    let mut trabajo = |dq: f64, poses: &mut [Motor<f64>], scratch: &mut [f64]| -> f64 {
+    let trabajo = |dq: f64, poses: &mut [Motor<f64>], scratch: &mut [f64]| -> f64 {
         scratch[j] = q[j] + dq;
         tree.fk(scratch, poses);
         // Potential-like term: −F·x summed over loads. Only its change
@@ -288,9 +288,21 @@ mod tests {
     #[test]
     fn a_sibling_branch_is_not_ours_to_carry() {
         let links = [
-            TreeLink { parent: None, offset: Motor::identity(), joint: ChainJoint::Revolute(z()) },
-            TreeLink { parent: Some(0), offset: Motor::translator(0.4, 0.0, 0.0), joint: ChainJoint::Revolute(z()) },
-            TreeLink { parent: Some(0), offset: Motor::translator(-0.4, 0.0, 0.0), joint: ChainJoint::Revolute(z()) },
+            TreeLink {
+                parent: None,
+                offset: Motor::identity(),
+                joint: ChainJoint::Revolute(z()),
+            },
+            TreeLink {
+                parent: Some(0),
+                offset: Motor::translator(0.4, 0.0, 0.0),
+                joint: ChainJoint::Revolute(z()),
+            },
+            TreeLink {
+                parent: Some(0),
+                offset: Motor::translator(-0.4, 0.0, 0.0),
+                joint: ChainJoint::Revolute(z()),
+            },
         ];
         let tree = Tree::new(&links);
         let mut poses = [Motor::identity(); 3];
@@ -321,7 +333,12 @@ mod tests {
             joint: ChainJoint::Revolute(z()),
         }];
         let tree = Tree::new(&links);
-        let w = Weight { link: 0, offset: [0.71, 0.0, 0.0], mass: 60.0, gravity: [0.0, -G, 0.0] };
+        let w = Weight {
+            link: 0,
+            offset: [0.71, 0.0, 0.0],
+            mass: 60.0,
+            gravity: [0.0, -G, 0.0],
+        };
         let loads: [&dyn Load; 1] = [&w];
         let mut poses = [Motor::identity(); 1];
         let mut scratch = [0.0_f64; 1];
@@ -348,8 +365,16 @@ mod tests {
     #[test]
     fn the_geometric_and_variational_torques_agree() {
         let links = [
-            TreeLink { parent: None, offset: Motor::identity(), joint: ChainJoint::Revolute(z()) },
-            TreeLink { parent: Some(0), offset: Motor::translator(0.40, 0.0, 0.0), joint: ChainJoint::Revolute(z()) },
+            TreeLink {
+                parent: None,
+                offset: Motor::identity(),
+                joint: ChainJoint::Revolute(z()),
+            },
+            TreeLink {
+                parent: Some(0),
+                offset: Motor::translator(0.40, 0.0, 0.0),
+                joint: ChainJoint::Revolute(z()),
+            },
         ];
         let tree = Tree::new(&links);
         let w = Weight {
@@ -366,9 +391,8 @@ mod tests {
             tree.fk(&q, &mut poses);
             for j in 0..2 {
                 let geom = super::joint_torque(&tree, &poses, &loads, j)[2];
-                let var = super::generalized_torque(
-                    &tree, &loads, &q, j, 1e-6, &mut poses, &mut scratch,
-                );
+                let var =
+                    super::generalized_torque(&tree, &loads, &q, j, 1e-6, &mut poses, &mut scratch);
                 assert!(
                     (geom - var).abs() < 1e-4,
                     "q={q:?} j={j}: geométrico {geom:.6}, variacional {var:.6}"
@@ -421,8 +445,16 @@ mod tests {
     #[test]
     fn joint_work_matches_load_work() {
         let links = [
-            TreeLink { parent: None, offset: Motor::identity(), joint: ChainJoint::Revolute(z()) },
-            TreeLink { parent: Some(0), offset: Motor::translator(0.40, 0.0, 0.0), joint: ChainJoint::Revolute(z()) },
+            TreeLink {
+                parent: None,
+                offset: Motor::identity(),
+                joint: ChainJoint::Revolute(z()),
+            },
+            TreeLink {
+                parent: Some(0),
+                offset: Motor::translator(0.40, 0.0, 0.0),
+                joint: ChainJoint::Revolute(z()),
+            },
         ];
         let tree = Tree::new(&links);
         let w = Weight {
@@ -446,7 +478,13 @@ mod tests {
             let medio = [(q[0] + previo[0]) / 2.0, (q[1] + previo[1]) / 2.0];
             for j in 0..2 {
                 let tau = super::generalized_torque(
-                    &tree, &loads, &medio, j, 1e-6, &mut poses, &mut scratch,
+                    &tree,
+                    &loads,
+                    &medio,
+                    j,
+                    1e-6,
+                    &mut poses,
+                    &mut scratch,
                 );
                 w_art += tau * (q[j] - previo[j]);
             }
