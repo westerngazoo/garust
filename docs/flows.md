@@ -1,6 +1,6 @@
 # Flujos — garust
 
-## Flujo principal
+## Flujo principal (Mermaid)
 
 ```mermaid
 flowchart LR
@@ -14,22 +14,52 @@ PHY --> ANIM[Motor tracks]
 ## Descripción paso a paso
 
 1. **Entry** — `src/lib.rs` re-exports workspace crates; pick alias (`Pga3`, `Vga3`, `Cga3`).
-1. **Core algebra** — `garust-core`: Cayley tables at compile time → wedge/inner/geometric product.
-1. **Geometry** — `garust-geo`: planes wedge to points, motors compose rigid motion via screw slerp.
-1. **Physics** — `garust-physics`: integrate rigid bodies → contacts → state for anim/recording.
-1. **Animation** — `garust-anim`: record motor tracks consumed by motoreel downstream.
+2. **Core algebra** — `garust-core`: Cayley tables at compile time → wedge/inner/geometric product.
+3. **Geometry** — `garust-geo`: planes wedge to points, motors compose rigid motion via screw slerp.
+4. **Physics** — `garust-physics`: integrate rigid bodies → contacts → state for anim/recording.
+5. **Animation** — `garust-anim`: record motor tracks consumed by motoreel downstream.
 
-## Diagrama PlantUML
+## Secuencia (PlantUML)
 
-Equivalente PlantUML del flujo principal (misma topología que el diagrama Mermaid):
+Fuente: [`diagrams/flow-sequence.puml`](./diagrams/flow-sequence.puml)
 
 ```plantuml
 @startuml
-title garust — flujo principal
-note as N1
-Ver flows.md Mermaid para detalle;
-exportar con herramientas mermaid→plantuml si se prefiere editar en PlantUML.
-end note
+title garust — secuencia principal
+
+participant "Entry" as Entry0
+participant "Core algebra" as Corealgebra1
+participant "Geometry" as Geometry2
+participant "Physics" as Physics3
+participant "Animation" as Animation4
+
+Entry0 -> Corealgebra1: `garust-core`: Cayley tables at compile time → wedge/inner/geometric product.
+Corealgebra1 -> Geometry2: `garust-geo`: planes wedge to points, motors compose rigid motion via screw slerp.
+Geometry2 -> Physics3: `garust-physics`: integrate rigid bodies → contacts → state for anim/recording.
+Physics3 -> Animation4: `garust-anim`: record motor tracks consumed by motoreel downstream.
+
+@enduml
+```
+
+## Componentes / estados (PlantUML)
+
+Fuente: [`diagrams/flow-architecture.puml`](./diagrams/flow-architecture.puml)
+
+```plantuml
+@startuml
+title garust — flujo de componentes
+start
+:MVMultivector;
+:GPGeometric;
+:GP;
+:ROTRotors;
+:ROT;
+:GEOPGA;
+:PHYPhysics;
+:PHY;
+:ANIMMotor;
+stop
+
 @enduml
 ```
 

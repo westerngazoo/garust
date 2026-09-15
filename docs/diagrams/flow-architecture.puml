@@ -1,0 +1,15 @@
+@startuml
+title garust — flujo de componentes
+start
+:MVMultivector;
+:GPGeometric;
+:GP;
+:ROTRotors;
+:ROT;
+:GEOPGA;
+:PHYPhysics;
+:PHY;
+:ANIMMotor;
+stop
+
+@enduml
