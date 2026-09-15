@@ -383,7 +383,22 @@ impl<A: Algebra, T: Real> Multivector<A, T> {
         let s2_sq = (w2 * w2).scalar_part() - q2;
         let c1 = max(T::ONE + s1_sq, T::ZERO).sqrt();
         let c2 = max(T::ONE + s2_sq, T::ZERO).sqrt();
-        let eps = T::from_f64(1e-6);
+        // Este umbral no separa "degenerado" de "no degenerado": separa
+        // "puedo dividir entre esto" de "no puedo". Las ramas de abajo
+        // dividen entre `c1` y `c2`, así que un `c` de 1e-6 se lleva seis
+        // dígitos de los dieciséis que hay — y la rama alterna, que evita
+        // esa división entera, ya estaba escrita justo al lado.
+        //
+        // Estaba en 1e-6, es decir exactamente en el borde: un par de
+        // motores cuyo `c2` valía 1.050e-6 tomaba la división y salía con
+        // 3.8e-4 de error, tres órdenes de magnitud sobre la tolerancia de
+        // las leyes. Eso tumbaba `slerp_unwrapped_hits_the_endpoint...` de
+        // forma intermitente, y más en x86 que en aarch64, porque cerca de
+        // una degeneración la aritmética de cada plataforma decide.
+        //
+        // 1e-3 deja trece dígitos buenos y manda al camino estable todo lo
+        // que esté cerca de la media vuelta, que es justo donde `c → 0`.
+        let eps = T::from_f64(1e-3);
         let (s1, s2) = if c1 > eps && c2 > eps {
             (w1 * (T::ONE / c2), w2 * (T::ONE / c1))
         } else if c1 > eps {
