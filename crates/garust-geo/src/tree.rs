@@ -8,7 +8,8 @@
 //! The representation is a **parent array** — each link stores the index
 //! of the link it hangs from. It is the standard multibody encoding, and
 //! it subsumes the open chain exactly: with `parent[i] = i - 1` the tree
-//! *is* a chain, and [`Tree::fk`] returns what [`Chain::fk`] returns. That
+//! *is* a chain, and [`Tree::fk`] returns what
+//! [`Chain::fk`](crate::chain::Chain::fk) returns. That
 //! equivalence is a test, not a claim.
 //!
 //! Same discipline as `chain.rs`: the tree borrows its links, owns
