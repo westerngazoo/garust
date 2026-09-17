@@ -287,3 +287,30 @@ proptest! {
         prop_assert!(arm.fk(&q).geodesic_distance(&target) < 1e-8);
     }
 }
+
+/// El par exacto que tumbaba `slerp_unwrapped_hits_the_endpoint...` de
+/// forma intermitente (issue #69), como caso fijo y barato.
+///
+/// Los dos motores son rotaciones de casi exactamente π sobre ejes
+/// distintos, así que `M = b·a⁻¹` sale con escalar ≈ −1.05e-6: una media
+/// vuelta. Ahí `c2 = 1.050e-6` caía **justo por encima** del umbral de
+/// 1e-6 con que `log` decidía si podía dividir entre `c`, tomaba la
+/// división, y perdía seis dígitos. El error llegaba a 3.8e-4, tres
+/// órdenes sobre la tolerancia de estas leyes.
+///
+/// Fijo y sin azar a propósito: el proptest lo encontraba una de cada
+/// veintisiete mil veces, que es la peor forma de enterarse.
+#[test]
+fn slerp_unwrapped_en_la_media_vuelta() {
+    let a = Motor::translator(0.8781059400746742, -0.14051438838083286, 1.9497036411453017)
+        * Motor::rotor(3.13978, pga_axis(1));
+    let b = Motor::translator(-1.3391282676638028, -0.9853067755556557, -1.096005131093936)
+        * Motor::rotor(3.14391, pga_axis(0));
+    let p = Pga3::point(0.0, 0.0, 0.0);
+    for k in -2..3 {
+        assert!(
+            close(&a.slerp_unwrapped(&b, 1.0, k).apply(&p), &b.apply(&p)),
+            "k = {k}: no aterriza en b"
+        );
+    }
+}
