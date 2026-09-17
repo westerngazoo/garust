@@ -47,6 +47,8 @@
 #![deny(missing_docs)]
 
 pub mod contact;
+pub mod load;
+pub mod multibody;
 pub mod world;
 
 pub use world::{Body, Joint, World, STATIC};

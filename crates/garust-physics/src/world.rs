@@ -271,7 +271,7 @@ fn jcross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
 /// Extract `[x, y, z]` from a PGA grade-3 point. Divides by the e123
 /// coefficient so ideal points (w = 0) return junk — callers must only pass
 /// finite Euclidean points.
-fn pga_point_xyz(p: &Pga3) -> [f64; 3] {
+pub(crate) fn pga_point_xyz(p: &Pga3) -> [f64; 3] {
     // Pga3::point(x,y,z) = e123 - x·e023 + y·e013 - z·e012
     // blade indices: e123=7, e023=14 (sign -x), e013=13 (sign +y), e012=11 (sign -z)
     let w = p.coeffs[7];

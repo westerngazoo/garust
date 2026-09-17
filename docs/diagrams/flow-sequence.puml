@@ -1,0 +1,15 @@
+@startuml
+title garust — secuencia principal
+
+participant "Entry" as Entry0
+participant "Core algebra" as Corealgebra1
+participant "Geometry" as Geometry2
+participant "Physics" as Physics3
+participant "Animation" as Animation4
+
+Entry0 -> Corealgebra1: `garust-core`: Cayley tables at compile time → wedge/inner/geometric product.
+Corealgebra1 -> Geometry2: `garust-geo`: planes wedge to points, motors compose rigid motion via screw slerp.
+Geometry2 -> Physics3: `garust-physics`: integrate rigid bodies → contacts → state for anim/recording.
+Physics3 -> Animation4: `garust-anim`: record motor tracks consumed by motoreel downstream.
+
+@enduml

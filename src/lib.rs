@@ -146,7 +146,7 @@ pub use garust_core::{
 // kinematic layer on top of `Motor`: screw-axis joints, forward
 // kinematics as a motor product, and damped-least-squares IK (RFC-013).
 #[doc(no_inline)]
-pub use garust_geo::{cga, chain, conformal, motor, pga};
+pub use garust_geo::{cga, chain, conformal, motor, pga, tree, twolink};
 
 // --- The kernel: traits, the multivector, signatures, and aliases --------
 #[doc(inline)]

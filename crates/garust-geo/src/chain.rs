@@ -60,7 +60,7 @@ pub enum ChainJoint {
 
 impl ChainJoint {
     /// The joint's motion at variable value `q`.
-    fn motor(&self, q: f64) -> Motor<f64> {
+    pub(crate) fn motor(&self, q: f64) -> Motor<f64> {
         match *self {
             ChainJoint::Revolute(line) => Motor::rotation_about(line, q),
             ChainJoint::Prismatic(d) => Motor::translator(d[0] * q, d[1] * q, d[2] * q),
