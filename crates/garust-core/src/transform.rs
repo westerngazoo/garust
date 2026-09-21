@@ -170,9 +170,18 @@ impl<A: Algebra, T: Real> Multivector<A, T> {
     pub fn exp(&self) -> Self {
         let sq = *self * *self;
         let c = sq.scalar_part();
+        // "Is self² a pure scalar?" has to be asked *relative to self²'s own
+        // magnitude*. Both sides scale with the square of self, so a
+        // `max(|c|, 1)` floor degenerates into an absolute tolerance as self
+        // shrinks and eventually calls every small bivector simple — which
+        // sends a screw down `exp_scalar_square` and silently drops the
+        // grade-4 term its exponential needs, leaving a non-versor.
         let scalar_square = {
-            let tol = T::from_f64(1e-9) * max(c.abs(), T::ONE);
-            (1..A::DIM).all(|i| sq.coeffs[i].abs() <= tol)
+            let mut off = T::ZERO;
+            for i in 1..A::DIM {
+                off = max(off, sq.coeffs[i].abs());
+            }
+            off <= T::from_f64(1e-9) * max(c.abs(), off)
         };
         if scalar_square {
             return self.exp_scalar_square(c);
@@ -265,8 +274,11 @@ impl<A: Algebra, T: Real> Multivector<A, T> {
         for &c in f.coeffs.as_slice() {
             f_norm = max(f_norm, c.abs());
         }
-        let scale = max(s.abs(), T::ONE);
-        if f_norm <= T::from_f64(1e-12) * scale {
+        // Relative to self²'s own magnitude, for the same reason the
+        // discriminant test below is: a `max(|s|, 1)` floor becomes an
+        // absolute tolerance once self is small, and then declares a
+        // genuine screw "already simple".
+        if f_norm <= T::from_f64(1e-12) * max(s.abs(), f_norm) {
             // self² is scalar: already simple.
             return Some((*self, Self::zero()));
         }
@@ -595,6 +607,55 @@ mod tests {
         let b = (e0 * e1) * 0.42;
         let expected = Pga3::one() + b;
         approx_eq(&b.exp().coeffs, &expected.coeffs, 1e-12);
+    }
+
+    /// Un generador de tornillo escalado por `t` chico tiene que seguir
+    /// exponenciando a un versor (issue #67).
+    ///
+    /// `B² ` escala con `t²`, así que tanto su escalar como su parte de
+    /// grado 4 se encogen juntos. El umbral de `exp` los comparaba contra
+    /// `max(|c|, 1)`: ese piso lo volvía una tolerancia **absoluta** y,
+    /// pasado cierto `t`, declaraba "cuadrado escalar" a cualquier
+    /// tornillo. Entonces `exp_scalar_square` omitía el pseudoescalar y
+    /// devolvía algo que ya no cumple la condición de Study — un
+    /// no-versor, con el que el `versor_inverse` del siguiente `slerp`
+    /// entraba en pánico.
+    ///
+    /// El proptest lo pegaba una vez cada varios miles de casos; aquí va
+    /// fijo, con el `t` del contraejemplo reducido.
+    #[test]
+    fn exp_de_un_tornillo_pequeno_sigue_siendo_versor() {
+        use crate::Pga3;
+        // e12 y e03 conmutan y son las dos partes simples del tornillo, así
+        // que exp(t·B) = exp(t·a·e12) · exp(t·b·e03) **exactamente**, y cada
+        // factor es cerrado: e12² = −1 y e03² = 0. Esa es la referencia.
+        let e12 = Pga3::basis(1) * Pga3::basis(2);
+        let e03 = Pga3::basis(8) * Pga3::basis(4);
+        let (a, b) = (0.4212_f64, 0.128_f64);
+        let bivector = e12 * a + e03 * b;
+
+        for t in [1.0, 1e-2, 1.028e-4, 1e-6, 1e-8] {
+            let got = (bivector * t).exp();
+            let want =
+                (Pga3::one() * (t * a).cos() + e12 * (t * a).sin()) * (Pga3::one() + e03 * (t * b));
+            let worst = (0..16)
+                .map(|i| (got.coeffs[i] - want.coeffs[i]).abs())
+                .fold(0.0_f64, f64::max);
+            assert!(
+                worst < 1e-15,
+                "t={t:e}: exp se desvía {worst:.3e} de exp(B₁)·exp(B₂); \
+                 con |g4| = {:.3e} (esperado {:.3e}) suele ser el \
+                 pseudoescalar omitido",
+                got.coeffs[15].abs(),
+                want.coeffs[15].abs()
+            );
+            // Y el resultado tiene que seguir pasando como versor: es lo que
+            // el `versor_inverse` del siguiente slerp va a exigirle.
+            assert!(
+                got.try_versor_inverse().is_some(),
+                "t={t:e}: el resultado no pasa como versor"
+            );
+        }
     }
 
     #[test]
