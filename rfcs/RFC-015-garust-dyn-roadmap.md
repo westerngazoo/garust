@@ -106,7 +106,7 @@ Claims:
 
 | Claim | Tier | Status | Statement |
 | --- | --- | --- | --- |
-| M1-C1 | closed form | have (`gravity_parabola`-style test); tighten to 1e-10 and any dt | under gravity alone, the centre of mass follows the exact parabola with the Lie integrator |
+| M1-C1 | closed form | have (`constant_force_accelerates_the_centre_of_mass`); tighten to 1e-10 and any dt | under gravity alone, the centre of mass follows the exact parabola with the Lie integrator |
 | M1-C2 | invariant | have at 1e-6 over short runs; add the 1e5-step `--ignored` run | torque-free: kinetic energy drifts under 1e-6 relative over 1e5 steps (dt = 1 ms) |
 | M1-C3 | invariant | have | torque-free: world-frame angular momentum constant to the same bound; this pins the commutator sign |
 | M1-C4 | closed form | new (flip exists; period is not checked) | Dzhanibekov: spin near the intermediate axis flips with the period given by the Jacobi elliptic solution of Euler's equations, to 0.1% |
