@@ -24,6 +24,14 @@ use garust_core::scalar::{Real, Scalar};
 use garust_core::signature::grade_of;
 use garust_core::Pga3Sig;
 
+/// `slerp_unwrapped`: a span whose rotation half-angle `φ` is at or below
+/// this has no canonical plane to wind around (pure translation, equal
+/// rotations, or the rotation dust left by the τ-collapse), so
+/// `extra_turns` is ignored. Protects `rot * (winds / φ)` from blowing
+/// up numerical dust into whole turns. The value is quoted in the
+/// method's doc; keep the two in step.
+const UNWRAP_MIN_HALF_ANGLE: f64 = 1e-9;
+
 /// The PGA multivector type a [`Motor`] wraps: `Cl(3, 0, 1)` over `T`.
 type Pga<T> = Multivector<Pga3Sig, T>;
 
@@ -629,7 +637,7 @@ impl<T: Real> Motor<T> {
             // part with the strictly negative square.
             let (rot, sq) = if sq1 < sq2 { (b1, sq1) } else { (b2, sq2) };
             let phi = if sq < T::ZERO { (-sq).sqrt() } else { T::ZERO };
-            if phi > T::from_f64(1e-9) {
+            if phi > T::from_f64(UNWRAP_MIN_HALF_ANGLE) {
                 let winds = T::from_f64(0.5 * core::f64::consts::TAU * f64::from(extra_turns));
                 gen += rot * (winds / phi);
             }
