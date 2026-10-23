@@ -17,13 +17,13 @@ use crate::algebra::Algebra;
 use crate::multivector::Multivector;
 use crate::scalar::Ring;
 
-// SAFETY: `Multivector` is `#[repr(transparent)]` over its sole field
+// SAFETY: INV-1 (docs/invariants.md). `Multivector` is `#[repr(transparent)]` over its sole field
 // `coeffs: A::Blades<T>`. When that field is `Zeroable`, an all-zero bit
 // pattern is the valid zero multivector, so the transparent wrapper is
 // `Zeroable` too.
 unsafe impl<A: Algebra, T: Ring> Zeroable for Multivector<A, T> where A::Blades<T>: Zeroable {}
 
-// SAFETY: with `#[repr(transparent)]`, `Multivector<A, T>` has the same
+// SAFETY: INV-1 (docs/invariants.md). With `#[repr(transparent)]`, `Multivector<A, T>` has the same
 // size, alignment, and (absence of) padding as its `A::Blades<T>` field.
 // When that field is `Pod` — every bit pattern valid, no padding — so is
 // the wrapper. `Copy` holds unconditionally; the `'static` bounds satisfy

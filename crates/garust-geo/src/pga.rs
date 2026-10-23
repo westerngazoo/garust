@@ -71,13 +71,16 @@ macro_rules! pga_object {
             mv: Pga<T>,
         }
 
-        // SAFETY: `#[repr(transparent)]` over a `Pga<T>` multivector, so the
+        // SAFETY: INV-2 (docs/invariants.md). `#[repr(transparent)]` over a `Pga<T>` multivector, so the
         // newtype inherits its plain-old-data layout under the `bytemuck`
         // feature — handy for uploading a point/line/plane buffer to the GPU.
         #[cfg(feature = "bytemuck")]
         unsafe impl<T: Scalar> bytemuck::Zeroable for $name<T> where Pga<T>: bytemuck::Zeroable {}
         #[cfg(feature = "bytemuck")]
         unsafe impl<T: Scalar + 'static> bytemuck::Pod for $name<T> where Pga<T>: bytemuck::Pod {}
+
+        // INV-2 guard: the newtype is exactly its 16 coefficients.
+        const _: () = assert!(core::mem::size_of::<$name<f64>>() == core::mem::size_of::<Pga<f64>>());
 
         impl<T: Scalar> $name<T> {
             /// Wrap a raw PGA multivector, unchecked.
