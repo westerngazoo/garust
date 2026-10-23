@@ -57,7 +57,7 @@ the agent is a technical collaborator.
    overrule; then comply.
 
 ## Design rules (Wari's absolute rules, adapted to a library)
-- **G1 `unsafe` carries a proof.** Every `unsafe` block has a `// SAFETY:` comment
+- **G1 `unsafe` carries a proof.** Every `unsafe` block **and every `unsafe impl`** has a `// SAFETY:` comment
   citing an invariant in `docs/invariants.md` (create the catalog with the first entry).
   New invariants land in the same PR as the block that needs them.
 - **G2 No allocation in the kernel.** `garust-core` and `garust-geo` stay `no_std` and
