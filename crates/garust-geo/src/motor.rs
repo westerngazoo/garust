@@ -51,13 +51,16 @@ impl<T: Scalar> Default for Motor<T> {
     }
 }
 
-// SAFETY: `Motor` is `#[repr(transparent)]` over its `Pga<T>` versor, so it
+// SAFETY: INV-2 (docs/invariants.md). `Motor` is `#[repr(transparent)]` over its `Pga<T>` versor, so it
 // inherits that multivector's plain-old-data layout under the `bytemuck`
 // feature — a motor is just its 16 scalar coefficients.
 #[cfg(feature = "bytemuck")]
 unsafe impl<T: Scalar> bytemuck::Zeroable for Motor<T> where Pga<T>: bytemuck::Zeroable {}
 #[cfg(feature = "bytemuck")]
 unsafe impl<T: Scalar + 'static> bytemuck::Pod for Motor<T> where Pga<T>: bytemuck::Pod {}
+
+// INV-2 guard: a motor is exactly its 16 coefficients.
+const _: () = assert!(core::mem::size_of::<Motor<f64>>() == core::mem::size_of::<Pga<f64>>());
 
 impl<T: Scalar> Motor<T> {
     /// The identity motion — leaves every object exactly where it is.

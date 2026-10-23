@@ -58,13 +58,16 @@ impl<T: Scalar> Default for Conformal<T> {
     }
 }
 
-// SAFETY: `Conformal` is `#[repr(transparent)]` over its `Cga<T>` versor, so
+// SAFETY: INV-2 (docs/invariants.md). `Conformal` is `#[repr(transparent)]` over its `Cga<T>` versor, so
 // it inherits that multivector's plain-old-data layout under the `bytemuck`
 // feature — a versor is just its 32 scalar coefficients.
 #[cfg(feature = "bytemuck")]
 unsafe impl<T: Scalar> bytemuck::Zeroable for Conformal<T> where Cga<T>: bytemuck::Zeroable {}
 #[cfg(feature = "bytemuck")]
 unsafe impl<T: Scalar + 'static> bytemuck::Pod for Conformal<T> where Cga<T>: bytemuck::Pod {}
+
+// INV-2 guard: a conformal versor is exactly its 32 coefficients.
+const _: () = assert!(core::mem::size_of::<Conformal<f64>>() == core::mem::size_of::<Cga<f64>>());
 
 impl<T: Scalar> Conformal<T> {
     /// The identity transformation — leaves every object where it is.

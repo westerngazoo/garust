@@ -57,13 +57,16 @@ macro_rules! cga_object {
             mv: Cga<T>,
         }
 
-        // SAFETY: `#[repr(transparent)]` over a `Cga<T>` multivector, so the
+        // SAFETY: INV-2 (docs/invariants.md). `#[repr(transparent)]` over a `Cga<T>` multivector, so the
         // newtype inherits its plain-old-data layout under the `bytemuck`
         // feature — handy for uploading a point/sphere/plane buffer to the GPU.
         #[cfg(feature = "bytemuck")]
         unsafe impl<T: Scalar> bytemuck::Zeroable for $name<T> where Cga<T>: bytemuck::Zeroable {}
         #[cfg(feature = "bytemuck")]
         unsafe impl<T: Scalar + 'static> bytemuck::Pod for $name<T> where Cga<T>: bytemuck::Pod {}
+
+        // INV-2 guard: the newtype is exactly its 32 coefficients.
+        const _: () = assert!(core::mem::size_of::<$name<f64>>() == core::mem::size_of::<Cga<f64>>());
 
         impl<T: Scalar> $name<T> {
             /// Wrap a raw CGA multivector, unchecked.

@@ -36,6 +36,17 @@ pub struct Multivector<A: Algebra, T: Ring> {
     pub coeffs: A::Blades<T>,
 }
 
+// INV-1 guard (docs/invariants.md): the wrapper has exactly the store's
+// layout. Checked on two concrete signatures; a second field or a dropped
+// `#[repr(transparent)]` fails to compile here.
+const _: () = {
+    use core::mem::{align_of, size_of};
+    assert!(size_of::<Multivector<crate::Pga3Sig, f64>>() == size_of::<[f64; 16]>());
+    assert!(align_of::<Multivector<crate::Pga3Sig, f64>>() == align_of::<[f64; 16]>());
+    assert!(size_of::<Multivector<crate::Cga3Sig, f32>>() == size_of::<[f32; 32]>());
+    assert!(align_of::<Multivector<crate::Cga3Sig, f32>>() == align_of::<[f32; 32]>());
+};
+
 // `derive` can't prove `A::Blades<T>: Clone/Copy/…` through the projected
 // associated type, so the standard marker traits are written by hand. The
 // bounds are real: `BladeStore<T>: Copy` makes the field `Copy`, and
