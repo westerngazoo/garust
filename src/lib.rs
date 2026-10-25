@@ -66,7 +66,9 @@
 //! - `norm_squared`, the magnitude `norm`, and `normalized`
 //! - versor inverse, the sandwich product, and a closed-form `exp`
 //! - the pseudoscalar, metric-independent complements, and the
-//!   regressive product `∨` (the *meet*, dual to the wedge's *join*)
+//!   regressive product `∨` — in plane-based PGA the *join* (two points
+//!   span a line), dual to the wedge's *meet* (three planes intersect in
+//!   a point); the names swap in a point-based reading
 //! - PGA geometric constructors for `Cl(3,0,1)`: `point`, `plane`,
 //!   `line_through`, with meet/join doing real incidence geometry
 //! - [`Motor`] — rigid-body motions in PGA (rotors, translators, and

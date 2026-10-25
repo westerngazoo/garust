@@ -135,7 +135,10 @@ let big  = scale.apply(&unit);                    // now radius 2
 - versor inverse, the **sandwich product**, and a closed-form `exp`
   (the bivector → rotor bridge)
 - duality: the **pseudoscalar**, metric-independent left/right
-  complements, and the **regressive product** `∨` (the *meet*)
+  complements, and the **regressive product** `∨`. In plane-based PGA
+  `∧` is the *meet* (three planes intersect in a point) and `∨` is the
+  *join* (two points span a line), as the example above shows; the
+  names swap in a point-based reading, where vectors are points
 - **PGA constructors** for `Cl(3,0,1)`: `point`, `plane`, `line_through`
 - **`Motor`** — rotors, translators, and their screw-motion compositions
 - **CGA constructors** for `Cl(4,1,0)`: `cga_point`, `sphere`, `cga_plane`
