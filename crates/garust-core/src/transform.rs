@@ -29,6 +29,68 @@ use crate::multivector::Multivector;
 use crate::scalar::{max, Real, Ring, Scalar};
 use crate::signature::grade_of;
 
+// Every threshold in this file is named here (AGENTS.md G5). Each one says
+// which test it decides and what misclassification it protects against;
+// "relative" means the bound scales with the operand, so shrinking the
+// input does not change the verdict.
+
+/// `try_versor_inverse`: a non-scalar component of `M * ~M` counts as
+/// non-zero above this fraction of `max(|⟨M ~M⟩₀|, 1)`. Protects against
+/// inverting a non-versor such as `1 + e1` as if it were one, while
+/// letting the rounding dust of a genuine versor product through.
+const VERSOR_INVERSE_TOL: f64 = 1e-10;
+
+/// `exp`: `self²` counts as a pure scalar when its largest non-scalar
+/// component is below this fraction of `max(|⟨self²⟩₀|, component)`.
+/// Relative, not absolute: a fixed floor would call every small screw
+/// "simple", send it down the scalar-square closed form and drop the
+/// grade-4 term its exponential needs (#71).
+const EXP_SCALAR_SQUARE_TOL: f64 = 1e-9;
+
+/// `try_bivector_split`: `self` counts as already simple when
+/// `|⟨self²⟩₄|` is below this fraction of `max(|⟨self²⟩₀|, |⟨self²⟩₄|)`.
+/// Relative for the same reason as [`EXP_SCALAR_SQUARE_TOL`]: an absolute
+/// floor declares a genuine small screw "already simple" (#71).
+const SPLIT_SIMPLE_TOL: f64 = 1e-12;
+
+/// `try_bivector_split`: the roots count as coincident (isoclinic) or
+/// complex when the discriminant `s² − F²` is below this fraction of
+/// `max(s², |F²|)`. Relative to the roots' own magnitude: in a degenerate
+/// metric `F² = 0`, so `disc = s²` is absolutely tiny for a small-angle
+/// screw that still has a well-defined split (#71).
+const SPLIT_DISCRIMINANT_TOL: f64 = 1e-12;
+
+/// `log`, debug builds only: how far `R·~R` may stray from 1, and how
+/// large an odd-grade coefficient may be, before the input is rejected
+/// as "not a normalized even versor". Loose on purpose: it guards the
+/// contract, not the precision of the result.
+const LOG_VERSOR_CHECK_TOL: f64 = 1e-6;
+
+/// `log`: smallest factor cosine `cᵢ` the code is willing to divide by.
+///
+/// Este umbral no separa "degenerado" de "no degenerado": separa
+/// "puedo dividir entre esto" de "no puedo". Las ramas de `log`
+/// dividen entre `c1` y `c2`, así que un `c` de 1e-6 se lleva seis
+/// dígitos de los dieciséis que hay — y la rama alterna, que evita
+/// esa división entera, ya estaba escrita justo al lado.
+///
+/// Estaba en 1e-6, es decir exactamente en el borde: un par de
+/// motores cuyo `c2` valía 1.050e-6 tomaba la división y salía con
+/// 3.8e-4 de error, tres órdenes de magnitud sobre la tolerancia de
+/// las leyes. Eso tumbaba `slerp_unwrapped_hits_the_endpoint...` de
+/// forma intermitente, y más en x86 que en aarch64, porque cerca de
+/// una degeneración la aritmética de cada plataforma decide (#70).
+///
+/// 1e-3 deja trece dígitos buenos y manda al camino estable todo lo
+/// que esté cerca de la media vuelta, que es justo donde `c → 0`.
+const LOG_MIN_DIVISIBLE_COSINE: f64 = 1e-3;
+
+/// `simple_log_part`: `|S²|` at or below this counts as the parabolic
+/// case (null generator, or the tiny-angle limit of the other conics),
+/// where `θ·B̂ ≈ S / c` and no rescale is needed. Protects the elliptic
+/// and hyperbolic branches from dividing by `m = √|S²| ≈ 0`.
+const LOG_CONIC_TOL: f64 = 1e-9;
+
 impl<A: Algebra, T: Scalar> Multivector<A, T> {
     /// Inverse `M⁻¹ = ~M / ⟨M ~M⟩_0`, defined for versors.
     ///
@@ -42,7 +104,7 @@ impl<A: Algebra, T: Scalar> Multivector<A, T> {
         // The tolerance lives in the real magnitude type, so this works even
         // when the coefficient field (e.g. Complex) has no order of its own.
         let one = <T::Magnitude as Ring>::ONE;
-        let tol = <T::Magnitude as Scalar>::from_f64(1e-10) * max(scalar.abs(), one);
+        let tol = <T::Magnitude as Scalar>::from_f64(VERSOR_INVERSE_TOL) * max(scalar.abs(), one);
         for i in 1..A::DIM {
             if prod.coeffs[i].abs() > tol {
                 return None;
@@ -181,7 +243,7 @@ impl<A: Algebra, T: Real> Multivector<A, T> {
             for i in 1..A::DIM {
                 off = max(off, sq.coeffs[i].abs());
             }
-            off <= T::from_f64(1e-9) * max(c.abs(), off)
+            off <= T::from_f64(EXP_SCALAR_SQUARE_TOL) * max(c.abs(), off)
         };
         if scalar_square {
             return self.exp_scalar_square(c);
@@ -278,7 +340,7 @@ impl<A: Algebra, T: Real> Multivector<A, T> {
         // discriminant test below is: a `max(|s|, 1)` floor becomes an
         // absolute tolerance once self is small, and then declares a
         // genuine screw "already simple".
-        if f_norm <= T::from_f64(1e-12) * max(s.abs(), f_norm) {
+        if f_norm <= T::from_f64(SPLIT_SIMPLE_TOL) * max(s.abs(), f_norm) {
             // self² is scalar: already simple.
             return Some((*self, Self::zero()));
         }
@@ -290,7 +352,7 @@ impl<A: Algebra, T: Real> Multivector<A, T> {
         // screw (tiny Euclidean rotation + translation on the same axis) has
         // a well-defined split even though `s²` is absolutely tiny. An
         // absolute floor here misclassified those screws as isoclinic.
-        if disc <= T::from_f64(1e-12) * max(s * s, f2.abs()) {
+        if disc <= T::from_f64(SPLIT_DISCRIMINANT_TOL) * max(s * s, f2.abs()) {
             return None;
         }
         let rad = disc.sqrt();
@@ -370,7 +432,7 @@ impl<A: Algebra, T: Real> Multivector<A, T> {
         debug_assert!(
             A::N < 6 && {
                 let n = r * r.reverse();
-                let tol = T::from_f64(1e-6);
+                let tol = T::from_f64(LOG_VERSOR_CHECK_TOL);
                 (n.scalar_part() - T::ONE).abs() <= tol
                     && (1..A::DIM).all(|i| n.coeffs[i].abs() <= tol)
                     && (0..A::DIM).all(|i| grade_of(i) % 2 == 0 || r.coeffs[i].abs() <= tol)
@@ -395,22 +457,9 @@ impl<A: Algebra, T: Real> Multivector<A, T> {
         let s2_sq = (w2 * w2).scalar_part() - q2;
         let c1 = max(T::ONE + s1_sq, T::ZERO).sqrt();
         let c2 = max(T::ONE + s2_sq, T::ZERO).sqrt();
-        // Este umbral no separa "degenerado" de "no degenerado": separa
-        // "puedo dividir entre esto" de "no puedo". Las ramas de abajo
-        // dividen entre `c1` y `c2`, así que un `c` de 1e-6 se lleva seis
-        // dígitos de los dieciséis que hay — y la rama alterna, que evita
-        // esa división entera, ya estaba escrita justo al lado.
-        //
-        // Estaba en 1e-6, es decir exactamente en el borde: un par de
-        // motores cuyo `c2` valía 1.050e-6 tomaba la división y salía con
-        // 3.8e-4 de error, tres órdenes de magnitud sobre la tolerancia de
-        // las leyes. Eso tumbaba `slerp_unwrapped_hits_the_endpoint...` de
-        // forma intermitente, y más en x86 que en aarch64, porque cerca de
-        // una degeneración la aritmética de cada plataforma decide.
-        //
-        // 1e-3 deja trece dígitos buenos y manda al camino estable todo lo
-        // que esté cerca de la media vuelta, que es justo donde `c → 0`.
-        let eps = T::from_f64(1e-3);
+        // "Can I divide by this?", not "is this degenerate?" — see the
+        // constant's doc for the history behind the value (#70).
+        let eps = T::from_f64(LOG_MIN_DIVISIBLE_COSINE);
         let (s1, s2) = if c1 > eps && c2 > eps {
             (w1 * (T::ONE / c2), w2 * (T::ONE / c1))
         } else if c1 > eps {
@@ -437,7 +486,7 @@ impl<A: Algebra, T: Real> Multivector<A, T> {
     /// (or its hyperbolic / null analogue) with cosine `c` back to the
     /// bivector `θ·B̂`. `s_sq` is `S²`, whose sign picks the conic.
     fn simple_log_part(s: Self, s_sq: T, c: T) -> Self {
-        let eps = T::from_f64(1e-9);
+        let eps = T::from_f64(LOG_CONIC_TOL);
         if s_sq < -eps {
             // Elliptic: S² = −sin²θ; θ = atan2(sin, cos) ∈ [0, τ/4].
             let m = (-s_sq).sqrt();

@@ -33,6 +33,13 @@ use crate::multivector::Multivector;
 use crate::scalar::{Real, Scalar};
 use crate::Pga3Sig;
 
+/// `screw_axis`: the twist counts as ideal (pure translation or zero,
+/// hence no finite axis) when the Euclidean part's squared norm is below
+/// this fraction of the whole twist's squared norm. Relative so that a
+/// slow screw is still reported with its axis; squared, so it compares
+/// like with like.
+const IDEAL_TWIST_TOL: f64 = 1e-24;
+
 /// PGA constructors are defined only for the `Cl(3, 0, 1)` signature, so
 /// this `impl` is pinned to the `Pga3Sig` marker. It covers both `Pga3`
 /// (`f64`) and `Pga3f` (`f32`).
@@ -262,7 +269,7 @@ impl<T: Real> Multivector<Pga3Sig, T> {
         // Ideal twist (pure translation or zero): the axis is the line at
         // infinity — nothing finite to draw.
         let scale = n1 + n2 + dot(&v1, &v1) + dot(&v2, &v2);
-        if n <= T::from_f64(1e-24) * scale {
+        if n <= T::from_f64(IDEAL_TWIST_TOL) * scale {
             return None;
         }
         let rate = n.sqrt();

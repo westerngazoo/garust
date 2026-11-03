@@ -45,6 +45,12 @@ pub enum TwoLinkError {
     HintAlongAxis,
 }
 
+/// `two_link_joint`: the hint counts as parallel to the base→target axis
+/// when its perpendicular component is below this fraction of
+/// `max(|hint|, 1)`. Such a hint picks no side of the solution circle,
+/// so the function rejects it instead of normalizing a near-zero vector.
+const HINT_ALONG_AXIS_TOL: f64 = 1e-12;
+
 fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
     [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 }
@@ -114,7 +120,7 @@ pub fn two_link_joint(
         hint[2] - along * u[2],
     ];
     let wn = norm(w);
-    if wn <= 1e-12 * norm(hint).max(1.0) {
+    if wn <= HINT_ALONG_AXIS_TOL * norm(hint).max(1.0) {
         return Err(TwoLinkError::HintAlongAxis);
     }
     let w = [w[0] / wn, w[1] / wn, w[2] / wn];
