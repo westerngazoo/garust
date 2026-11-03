@@ -1,2 +1,5 @@
 /target
 .DS_Store
+
+# Maintainer's process, untracked (the repo is public; see AGENTS.md)
+CLAUDE.local.md
