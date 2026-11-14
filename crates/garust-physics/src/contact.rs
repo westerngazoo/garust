@@ -37,6 +37,27 @@ use garust_core::Pga3;
 
 use crate::RigidBody;
 
+/// Squared tangential speed, in (length/time)², below which a contact is
+/// treated as having no sliding direction and friction is skipped.
+/// Protects the tangent normalisation `v_tang / |v_tang|` from dividing
+/// rounding dust by its own length and applying a friction impulse along
+/// a meaningless direction. 1e-24 is a speed of 1e-12: far below anything
+/// a simulation step produces on purpose, far above f64 underflow.
+const TANGENTIAL_SPEED_SQ_MIN: f64 = 1e-24;
+
+/// Squared length below which a plane normal or a line direction is
+/// treated as the zero vector. Protects the divisions by `|n|` and `|d|²`
+/// in [`point_plane_distance`] and [`line_line_closest`] from turning a
+/// degenerate (all-zero) primitive into infinities or NaN; those functions
+/// return a zero distance or the origin instead.
+const DEGENERATE_LEN_SQ: f64 = 1e-24;
+
+/// Value of `|d1|²|d2|² − (d1·d2)²` below which two lines are treated as
+/// parallel. Protects the skew-line closest-point solve from dividing by
+/// a near-zero determinant; parallel lines take the projection branch.
+/// Absolute, so it assumes directions of roughly unit length.
+const PARALLEL_DENOM_MIN: f64 = 1e-12;
+
 #[inline]
 fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
     a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
@@ -177,7 +198,7 @@ pub fn resolve_pair(
             v_full[2] - n[2] * dot(v_full, n),
         ];
         let v_tang_len_sq = dot(v_tang, v_tang);
-        if v_tang_len_sq > 1e-24 {
+        if v_tang_len_sq > TANGENTIAL_SPEED_SQ_MIN {
             let v_tang_len = garust_core::Real::sqrt(v_tang_len_sq);
             let t = [
                 v_tang[0] / v_tang_len,
@@ -235,7 +256,7 @@ pub fn resolve_static(body: &mut RigidBody, contact: &Contact, restitution: f64,
             v[2] - n[2] * dot(v, n),
         ];
         let v_tang_len_sq = dot(v_tang, v_tang);
-        if v_tang_len_sq > 1e-24 {
+        if v_tang_len_sq > TANGENTIAL_SPEED_SQ_MIN {
             let v_tang_len = garust_core::Real::sqrt(v_tang_len_sq);
             let t = [
                 v_tang[0] / v_tang_len,
@@ -288,7 +309,7 @@ pub fn point_plane_distance(pt: [f64; 3], plane: &Pga3) -> f64 {
     let c = plane.coeffs[4];
     let d = plane.coeffs[8];
     let len_sq = a * a + b * b + c * c;
-    if len_sq < 1e-24 {
+    if len_sq < DEGENERATE_LEN_SQ {
         return 0.0;
     }
     (a * pt[0] + b * pt[1] + c * pt[2] + d) / garust_core::Real::sqrt(len_sq)
@@ -341,7 +362,7 @@ fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
 #[inline]
 fn cross_div(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
     let len_sq = dot(a, a);
-    if len_sq < 1e-24 {
+    if len_sq < DEGENERATE_LEN_SQ {
         return [0.0; 3];
     }
     let c = cross(a, b);
@@ -364,9 +385,9 @@ fn skew_closest(
     let e = dot(d2, w);
     let denom = a * c - b * b;
 
-    let (s, t) = if denom.abs() < 1e-12 {
+    let (s, t) = if denom.abs() < PARALLEL_DENOM_MIN {
         // Parallel lines: project onto the other line's direction.
-        (0.0, d / a.max(1e-24))
+        (0.0, d / a.max(DEGENERATE_LEN_SQ))
     } else {
         ((b * e - c * d) / denom, (a * e - b * d) / denom)
     };
@@ -749,5 +770,76 @@ mod tests {
             ang_after > ang_before,
             "no angular momentum induced: before={ang_before}, after={ang_after}"
         );
+    }
+
+    // ── Named tolerances (G5): the degenerate case each one protects ─────
+
+    /// `TANGENTIAL_SPEED_SQ_MIN`: a head-on hit has no sliding direction,
+    /// so friction must be skipped rather than normalise a zero tangent.
+    #[test]
+    fn friction_is_skipped_when_there_is_no_sliding() {
+        let hit = Contact {
+            normal: [0.0, 1.0, 0.0],
+            depth: 0.001,
+            point: [0.0, 0.0, 0.0],
+        };
+
+        let mut ball = RigidBody::new(2.0);
+        ball.position = [0.0, 0.5, 0.0];
+        ball.linear_momentum = [0.0, -4.0, 0.0]; // straight down, no lateral part
+        let spin_before = ball.angular_momentum;
+        resolve_static(&mut ball, &hit, 1.0, 0.4);
+        assert_eq!(ball.linear_momentum, [0.0, 4.0, 0.0]);
+        assert_eq!(ball.angular_momentum, spin_before);
+
+        let mut a = RigidBody::new(1.0);
+        let mut b = RigidBody::new(1.0);
+        a.position = [0.0, -0.5, 0.0];
+        b.position = [0.0, 0.5, 0.0];
+        a.linear_momentum = [0.0, 2.0, 0.0]; // closing along the normal only
+        resolve_pair(&mut a, &mut b, &hit, 1.0, 0.4);
+        assert_eq!(a.linear_momentum, [0.0, 0.0, 0.0]);
+        assert_eq!(b.linear_momentum, [0.0, 2.0, 0.0]);
+        assert_eq!(a.angular_momentum, spin_before);
+        assert_eq!(b.angular_momentum, spin_before);
+    }
+
+    /// `DEGENERATE_LEN_SQ`: a plane with a zero normal has no distance to
+    /// anything; the answer is `0`, not a division by zero.
+    #[test]
+    fn point_plane_distance_of_a_zero_normal_is_zero() {
+        use super::point_plane_distance;
+        use garust_core::Pga3;
+        let no_normal = Pga3::plane(0.0, 0.0, 0.0, 5.0);
+        assert_eq!(point_plane_distance([1.0, 2.0, 3.0], &no_normal), 0.0);
+    }
+
+    /// `DEGENERATE_LEN_SQ`: a line with no direction (the zero multivector)
+    /// yields finite output instead of NaN.
+    #[test]
+    fn line_line_closest_with_a_degenerate_line_is_finite() {
+        use super::line_line_closest;
+        use garust_core::Pga3;
+        let l = Pga3::point(0.0, 0.0, 1.0).line_through(&Pga3::point(1.0, 0.0, 1.0));
+        for (dist, p, q) in [
+            line_line_closest(&Pga3::zero(), &l),
+            line_line_closest(&l, &Pga3::zero()),
+            line_line_closest(&Pga3::zero(), &Pga3::zero()),
+        ] {
+            assert!(dist.is_finite(), "dist = {dist}");
+            assert!(p.iter().chain(q.iter()).all(|x| x.is_finite()));
+        }
+    }
+
+    /// `PARALLEL_DENOM_MIN`: distinct parallel lines take the projection
+    /// branch and still report their true separation.
+    #[test]
+    fn line_line_closest_parallel_lines_report_their_separation() {
+        use super::line_line_closest;
+        use garust_core::Pga3;
+        let l1 = Pga3::point(0.0, 0.0, 0.0).line_through(&Pga3::point(1.0, 0.0, 0.0));
+        let l2 = Pga3::point(0.0, 3.0, 0.0).line_through(&Pga3::point(1.0, 3.0, 0.0));
+        let (dist, _, _) = line_line_closest(&l1, &l2);
+        assert!((dist - 3.0).abs() < 1e-12, "dist = {dist}");
     }
 }
