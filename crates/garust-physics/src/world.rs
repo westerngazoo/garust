@@ -34,11 +34,13 @@ use crate::contact::{resolve_pair, resolve_static, Contact, Sphere};
 use crate::{Inertia, RigidBody};
 
 /// Total effective inverse mass along a constraint direction below which
-/// the joint row is skipped. It is exactly zero when both ends are
-/// [`STATIC`] (or otherwise immovable along that direction); the threshold
-/// protects the impulse `lambda = -(v_rel + bias) / inv_total` from a
-/// division by zero. 1e-30 only catches that case: any real pair of
-/// bodies has an inverse mass many orders of magnitude larger.
+/// the joint row is skipped. Protects the impulse
+/// `lambda = -(v_rel + bias) / inv_total` from a division by zero. The
+/// total is zero when neither end can move: both ends [`STATIC`] (where
+/// the impulse would be discarded anyway) or, the case that matters, a
+/// body of infinite mass and inertia, whose momentum would otherwise
+/// become infinite or NaN. The threshold is absolute, in 1/mass: a row
+/// whose bodies total more than 1e30 mass units is skipped too.
 const INV_MASS_MIN: f64 = 1e-30;
 
 /// Length below which a prismatic joint's world-space axis is treated as
@@ -998,42 +1000,37 @@ mod tests {
 
     // ── Named tolerances (G5): the degenerate case each one protects ─────
 
-    /// `INV_MASS_MIN`: a joint whose two ends are both `STATIC` has zero
-    /// effective inverse mass. Its rows are skipped; nothing divides by zero
-    /// and the unrelated body is left exactly as free flight leaves it.
+    /// `INV_MASS_MIN`: an immovable body (infinite mass and inertia) pinned
+    /// to the world away from its anchor has zero effective inverse mass.
+    /// The rows are skipped, so its momentum stays exactly zero instead of
+    /// becoming infinite or NaN.
     #[test]
-    fn joint_between_two_static_ends_is_skipped() {
-        use super::{Joint, STATIC};
+    fn joint_on_an_immovable_body_is_skipped() {
+        use super::{solve_joints, Joint, STATIC};
 
-        let world = World::new().with_gravity([0.0, 0.0, 0.0]);
-        let mut bodies = [Body::ball(2.0, 0.1)];
-        bodies[0].rigid.linear_momentum = [2.0, 0.0, 0.0];
+        let mut bodies = [Body::ball(f64::INFINITY, 0.1)];
+        let rest = bodies[0].rigid.angular_momentum;
 
         // Anchors deliberately apart, so every row has a non-zero error.
         let joints = [
             Joint::Fixed {
                 a: STATIC,
-                b: STATIC,
-                anchor_a: [0.0, 0.0, 0.0],
-                anchor_b: [1.0, 2.0, 3.0],
+                b: 0,
+                anchor_a: [1.0, 2.0, 3.0],
+                anchor_b: [0.0, 0.0, 0.0],
             },
             Joint::Prismatic {
                 a: STATIC,
-                b: STATIC,
-                anchor_a: [0.0, 0.0, 0.0],
-                anchor_b: [1.0, 2.0, 3.0],
+                b: 0,
+                anchor_a: [1.0, 2.0, 3.0],
+                anchor_b: [0.0, 0.0, 0.0],
                 axis: [1.0, 0.0, 0.0],
             },
         ];
 
-        let dt = 0.001;
-        for _ in 0..100 {
-            world.step(&mut bodies, &joints, dt);
-        }
-        let p = bodies[0].rigid.position;
-        assert!((p[0] - 0.1).abs() < 1e-12, "x = {}", p[0]);
-        assert_eq!([p[1], p[2]], [0.0, 0.0]);
-        assert_eq!(bodies[0].rigid.linear_momentum, [2.0, 0.0, 0.0]);
+        solve_joints(&mut bodies, &joints, 0.001);
+        assert_eq!(bodies[0].rigid.linear_momentum, [0.0, 0.0, 0.0]);
+        assert_eq!(bodies[0].rigid.angular_momentum, rest);
     }
 
     /// `AXIS_LEN_MIN`: a prismatic joint with a zero axis constrains

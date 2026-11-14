@@ -37,19 +37,25 @@ use garust_core::Pga3;
 
 use crate::RigidBody;
 
-/// Squared tangential speed, in (length/time)², below which a contact is
-/// treated as having no sliding direction and friction is skipped.
-/// Protects the tangent normalisation `v_tang / |v_tang|` from dividing
+/// Squared tangential speed, in (length/time)², at or below which
+/// [`resolve_pair`] and [`resolve_static`] treat a contact as having no
+/// sliding direction and skip friction. Protects the tangent normalisation `v_tang / |v_tang|` from dividing
 /// rounding dust by its own length and applying a friction impulse along
 /// a meaningless direction. 1e-24 is a speed of 1e-12: far below anything
 /// a simulation step produces on purpose, far above f64 underflow.
 const TANGENTIAL_SPEED_SQ_MIN: f64 = 1e-24;
 
 /// Squared length below which a plane normal or a line direction is
-/// treated as the zero vector. Protects the divisions by `|n|` and `|d|²`
-/// in [`point_plane_distance`] and [`line_line_closest`] from turning a
-/// degenerate (all-zero) primitive into infinities or NaN; those functions
-/// return a zero distance or the origin instead.
+/// treated as the zero vector, so a degenerate (all-zero) primitive never
+/// becomes an infinity or a NaN. Three uses:
+///
+/// - [`point_plane_distance`] divides by `|n|`; below the threshold it
+///   returns `0`.
+/// - `cross_div` divides by `|d|²` to find a point on a line; below the
+///   threshold it returns the origin, so [`line_line_closest`] measures a
+///   direction-less line as if it passed through the origin.
+/// - `skew_closest` uses it as the floor of the divisor `|d1|²` in its
+///   parallel branch.
 const DEGENERATE_LEN_SQ: f64 = 1e-24;
 
 /// Value of `|d1|²|d2|² − (d1·d2)²` below which two lines are treated as
@@ -792,6 +798,15 @@ mod tests {
         assert_eq!(ball.linear_momentum, [0.0, 4.0, 0.0]);
         assert_eq!(ball.angular_momentum, spin_before);
 
+        // Not only the exact zero: a lateral speed of 1e-13 (squared 1e-26,
+        // under the threshold) is dust, and friction must leave it alone.
+        let mut dusty = RigidBody::new(2.0);
+        dusty.position = [0.0, 0.5, 0.0];
+        dusty.linear_momentum = [2e-13, -4.0, 0.0];
+        resolve_static(&mut dusty, &hit, 1.0, 0.4);
+        assert_eq!(dusty.linear_momentum, [2e-13, 4.0, 0.0]);
+        assert_eq!(dusty.angular_momentum, spin_before);
+
         let mut a = RigidBody::new(1.0);
         let mut b = RigidBody::new(1.0);
         a.position = [0.0, -0.5, 0.0];
@@ -812,6 +827,10 @@ mod tests {
         use garust_core::Pga3;
         let no_normal = Pga3::plane(0.0, 0.0, 0.0, 5.0);
         assert_eq!(point_plane_distance([1.0, 2.0, 3.0], &no_normal), 0.0);
+        // Not only the exact zero: a normal shorter than the threshold
+        // (|n|² = 1e-26) is rounding dust, not a plane.
+        let dust = Pga3::plane(1e-13, 0.0, 0.0, 5.0);
+        assert_eq!(point_plane_distance([1.0, 2.0, 3.0], &dust), 0.0);
     }
 
     /// `DEGENERATE_LEN_SQ`: a line with no direction (the zero multivector)
