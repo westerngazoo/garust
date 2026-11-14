@@ -39,10 +39,11 @@ use crate::RigidBody;
 
 /// Squared tangential speed, in (length/time)², at or below which
 /// [`resolve_pair`] and [`resolve_static`] treat a contact as having no
-/// sliding direction and skip friction. Protects the tangent normalisation `v_tang / |v_tang|` from dividing
-/// rounding dust by its own length and applying a friction impulse along
-/// a meaningless direction. 1e-24 is a speed of 1e-12: far below anything
-/// a simulation step produces on purpose, far above f64 underflow.
+/// sliding direction and skip friction. Protects the tangent
+/// normalisation `v_tang / |v_tang|` from dividing rounding dust by its
+/// own length and applying a friction impulse along a meaningless
+/// direction. 1e-24 is a speed of 1e-12: far below anything a simulation
+/// step produces on purpose, far above f64 underflow.
 const TANGENTIAL_SPEED_SQ_MIN: f64 = 1e-24;
 
 /// Squared length below which a plane normal or a line direction is
@@ -54,7 +55,7 @@ const TANGENTIAL_SPEED_SQ_MIN: f64 = 1e-24;
 /// - `cross_div` divides by `|d|²` to find a point on a line; below the
 ///   threshold it returns the origin, so [`line_line_closest`] measures a
 ///   direction-less line as if it passed through the origin.
-/// - `skew_closest` uses it as the floor of the divisor `|d1|²` in its
+/// - `skew_closest` uses it as the floor of the divisor `|d2|²` in its
 ///   parallel branch.
 const DEGENERATE_LEN_SQ: f64 = 1e-24;
 
@@ -392,8 +393,10 @@ fn skew_closest(
     let denom = a * c - b * b;
 
     let (s, t) = if denom.abs() < PARALLEL_DENOM_MIN {
-        // Parallel lines: project onto the other line's direction.
-        (0.0, d / a.max(DEGENERATE_LEN_SQ))
+        // Parallel lines: keep `p1` (s = 0) and project it onto line 2,
+        // t = (d2·w) / |d2|². Line 2's own direction, not line 1's: the
+        // two differ whenever the directions differ in sign or length.
+        (0.0, e / c.max(DEGENERATE_LEN_SQ))
     } else {
         ((b * e - c * d) / denom, (a * e - b * d) / denom)
     };
@@ -860,5 +863,37 @@ mod tests {
         let l2 = Pga3::point(0.0, 3.0, 0.0).line_through(&Pga3::point(1.0, 3.0, 0.0));
         let (dist, _, _) = line_line_closest(&l1, &l2);
         assert!((dist - 3.0).abs() < 1e-12, "dist = {dist}");
+    }
+
+    /// Parallel lines whose directions differ in sign and length: through
+    /// the public API the reference points are the feet of the perpendicular
+    /// from the origin, so the separation is exact with or without the
+    /// fix below. This pins the public behaviour; the next test is the one
+    /// that reproduces the defect.
+    #[test]
+    fn line_line_closest_antiparallel_lines_of_different_length() {
+        use super::line_line_closest;
+        use garust_core::Pga3;
+        let l1 = Pga3::point(4.0, 0.0, 0.0).line_through(&Pga3::point(5.0, 0.0, 0.0));
+        let l2 = Pga3::point(9.0, 3.0, 0.0).line_through(&Pga3::point(7.0, 3.0, 0.0));
+        let (dist, _, _) = line_line_closest(&l1, &l2);
+        assert!((dist - 3.0).abs() < 1e-12, "dist = {dist}");
+    }
+
+    /// The parallel branch must project `p1` onto line 2 with line 2's own
+    /// direction: `t = (d2·w) / (d2·d2)`. With `d1 = (1,0,0)` and
+    /// `d2 = (-2,0,0)` the two candidate formulas disagree, and only the
+    /// right one returns the true separation.
+    #[test]
+    fn skew_closest_parallel_branch_projects_onto_the_second_line() {
+        use super::skew_closest;
+        let p1 = [4.0, 0.0, 0.0];
+        let d1 = [1.0, 0.0, 0.0];
+        let p2 = [9.0, 3.0, 0.0]; // not the foot of the perpendicular from p1
+        let d2 = [-2.0, 0.0, 0.0];
+        let (dist, q1, q2) = skew_closest(p1, d1, p2, d2);
+        assert!((dist - 3.0).abs() < 1e-12, "dist = {dist}");
+        assert_eq!(q1, p1);
+        assert_eq!(q2, [4.0, 3.0, 0.0]);
     }
 }
