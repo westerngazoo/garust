@@ -59,11 +59,16 @@ const TANGENTIAL_SPEED_SQ_MIN: f64 = 1e-24;
 ///   parallel branch.
 const DEGENERATE_LEN_SQ: f64 = 1e-24;
 
-/// Value of `|d1|²|d2|² − (d1·d2)²` below which two lines are treated as
-/// parallel. Protects the skew-line closest-point solve from dividing by
-/// a near-zero determinant; parallel lines take the projection branch.
-/// Absolute, so it assumes directions of roughly unit length.
-const PARALLEL_DENOM_MIN: f64 = 1e-12;
+/// Value of `sin²θ`, with `θ` the angle between two lines, at or below
+/// which they are treated as parallel (`θ` up to about 1e-6 rad).
+/// Protects the skew-line closest-point solve from dividing by a
+/// determinant that is zero or dominated by cancellation; parallel lines
+/// take the projection branch. The determinant is
+/// `|d1|²|d2|² − (d1·d2)² = |d1|²|d2|² sin²θ`, so it is compared against
+/// this constant times `|d1|²|d2|²`: the test is relative and does not
+/// depend on the length of the direction vectors, which `line_through`
+/// does not normalise.
+const PARALLEL_SIN_SQ_MAX: f64 = 1e-12;
 
 #[inline]
 fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
@@ -331,6 +336,9 @@ pub fn point_plane_distance(pt: [f64; 3], plane: &Pga3) -> f64 {
 ///
 /// If the lines are parallel (or one is degenerate) the returned points are
 /// the closest approach under a least-squares reading of the direction vectors.
+/// Two lines count as parallel when the angle `θ` between them has
+/// `sin²θ ≤ 1e-12` (about 1e-6 rad), whatever the length of their direction
+/// vectors: the lines need not be normalised.
 pub fn line_line_closest(l1: &Pga3, l2: &Pga3) -> (f64, [f64; 3], [f64; 3]) {
     // Direction from the Euclidean bivector part (blade indices 6, 5, 3).
     // Sign convention (from blade_product / Cayley table):
@@ -392,7 +400,9 @@ fn skew_closest(
     let e = dot(d2, w);
     let denom = a * c - b * b;
 
-    let (s, t) = if denom.abs() < PARALLEL_DENOM_MIN {
+    // `<=`, not `<`: a direction of zero length makes both sides zero and
+    // must take the projection branch rather than divide by `denom`.
+    let (s, t) = if denom.abs() <= PARALLEL_SIN_SQ_MAX * a * c {
         // Parallel lines: keep `p1` (s = 0) and project it onto line 2,
         // t = (d2·w) / |d2|². Line 2's own direction, not line 1's: the
         // two differ whenever the directions differ in sign or length.
@@ -853,7 +863,7 @@ mod tests {
         }
     }
 
-    /// `PARALLEL_DENOM_MIN`: distinct parallel lines take the projection
+    /// `PARALLEL_SIN_SQ_MAX`: distinct parallel lines take the projection
     /// branch and still report their true separation.
     #[test]
     fn line_line_closest_parallel_lines_report_their_separation() {
@@ -895,5 +905,58 @@ mod tests {
         assert!((dist - 3.0).abs() < 1e-12, "dist = {dist}");
         assert_eq!(q1, p1);
         assert_eq!(q2, [4.0, 3.0, 0.0]);
+    }
+
+    // ── Parallel test is relative: the answer does not depend on how long
+    //    the direction vectors happen to be (`line_through` does not
+    //    normalise them). ────────────────────────────────────────────────
+
+    /// The line through `p` with direction `dir`, stored with a direction
+    /// vector of length `|dir| * scale`.
+    fn line(p: [f64; 3], dir: [f64; 3], scale: f64) -> garust_core::Pga3 {
+        use garust_core::Pga3;
+        Pga3::point(p[0], p[1], p[2]).line_through(&Pga3::point(
+            p[0] + dir[0] * scale,
+            p[1] + dir[1] * scale,
+            p[2] + dir[2] * scale,
+        ))
+    }
+
+    /// Perpendicular lines 1 apart. With short direction vectors the old
+    /// absolute test called them parallel and reported 5.1.
+    #[test]
+    fn line_line_closest_perpendicular_lines_at_any_direction_length() {
+        use super::line_line_closest;
+        for scale in [1.0, 1e-4, 1e3] {
+            let along_x = line([0.0, 1.0, 0.0], [1.0, 0.0, 0.0], scale);
+            let along_z = line([5.0, 0.0, 0.0], [0.0, 0.0, 1.0], scale);
+            let (dist, q1, q2) = line_line_closest(&along_x, &along_z);
+            assert!((dist - 1.0).abs() < 1e-9, "scale {scale}: dist = {dist}");
+            for (got, want) in q1.iter().zip([5.0, 1.0, 0.0]) {
+                assert!((got - want).abs() < 1e-9, "scale {scale}: q1 = {q1:?}");
+            }
+            for (got, want) in q2.iter().zip([5.0, 0.0, 0.0]) {
+                assert!((got - want).abs() < 1e-9, "scale {scale}: q2 = {q2:?}");
+            }
+        }
+    }
+
+    /// Two lines at an angle of 1e-7 (sin² = 1e-14, under the threshold)
+    /// are parallel at every direction length, so all three scales take
+    /// the projection branch and agree. The old absolute test sent the
+    /// long vectors down the ill-conditioned oblique solve instead.
+    #[test]
+    fn line_line_closest_near_parallel_lines_agree_at_any_direction_length() {
+        use super::line_line_closest;
+        let mut dists = [0.0; 3];
+        for (out, scale) in dists.iter_mut().zip([1.0, 1e-4, 1e3]) {
+            let l1 = line([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], scale);
+            let l2 = line([0.0, 1.0, 3.0], [1.0, 1e-7, 0.0], scale);
+            *out = line_line_closest(&l1, &l2).0;
+        }
+        let want = garust_core::Real::sqrt(10.0_f64); // offset (0, 1, 3)
+        for d in dists {
+            assert!((d - want).abs() < 1e-6, "dists = {dists:?}");
+        }
     }
 }
