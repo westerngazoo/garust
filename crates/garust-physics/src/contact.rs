@@ -67,7 +67,10 @@ const DEGENERATE_LEN_SQ: f64 = 1e-24;
 /// `|d1|²|d2|² − (d1·d2)² = |d1|²|d2|² sin²θ`, so it is compared against
 /// this constant times `|d1|²|d2|²`: the test is relative and does not
 /// depend on the length of the direction vectors, which `line_through`
-/// does not normalise.
+/// does not normalise. That holds while `|d1|²|d2|²` is a finite f64
+/// (lengths up to about 1e77); a direction shorter than 1e-12 is already
+/// degenerate under [`DEGENERATE_LEN_SQ`]. The value is quoted in the doc
+/// of [`line_line_closest`]; keep the two in step.
 const PARALLEL_SIN_SQ_MAX: f64 = 1e-12;
 
 #[inline]
@@ -337,8 +340,32 @@ pub fn point_plane_distance(pt: [f64; 3], plane: &Pga3) -> f64 {
 /// If the lines are parallel (or one is degenerate) the returned points are
 /// the closest approach under a least-squares reading of the direction vectors.
 /// Two lines count as parallel when the angle `θ` between them has
-/// `sin²θ ≤ 1e-12` (about 1e-6 rad), whatever the length of their direction
-/// vectors: the lines need not be normalised.
+/// `sin²θ ≤ 1e-12` (about 1e-6 rad). The test is relative to the length of
+/// the direction vectors, so the lines need not be normalised. For such a
+/// pair the result is the distance from a point of `l1` to `l2`, not the
+/// minimum over both lines, which for nearly parallel lines lies far along
+/// them.
+///
+/// ```
+/// use garust_core::Pga3;
+/// use garust_physics::contact::line_line_closest;
+///
+/// let p = |x, y, z| Pga3::point(x, y, z);
+///
+/// // Skew lines: y = 1 along x, and x = 5 along z. One unit apart.
+/// let along_x = p(0.0, 1.0, 0.0).line_through(&p(1.0, 1.0, 0.0));
+/// let along_z = p(5.0, 0.0, 0.0).line_through(&p(5.0, 0.0, 1.0));
+/// let (dist, on_x, on_z) = line_line_closest(&along_x, &along_z);
+/// assert!((dist - 1.0).abs() < 1e-12);
+/// assert!((on_x[0] - 5.0).abs() < 1e-12 && (on_z[1]).abs() < 1e-12);
+///
+/// // Degenerate: parallel lines have no unique closest pair. The distance
+/// // is still their separation, and nothing is NaN.
+/// let shifted = p(0.0, 4.0, 0.0).line_through(&p(2.0, 4.0, 0.0));
+/// let (dist, a, b) = line_line_closest(&along_x, &shifted);
+/// assert!((dist - 3.0).abs() < 1e-12);
+/// assert!(a.iter().chain(b.iter()).all(|c| c.is_finite()));
+/// ```
 pub fn line_line_closest(l1: &Pga3, l2: &Pga3) -> (f64, [f64; 3], [f64; 3]) {
     // Direction from the Euclidean bivector part (blade indices 6, 5, 3).
     // Sign convention (from blade_product / Cayley table):
@@ -400,8 +427,9 @@ fn skew_closest(
     let e = dot(d2, w);
     let denom = a * c - b * b;
 
-    // `<=`, not `<`: a direction of zero length makes both sides zero and
-    // must take the projection branch rather than divide by `denom`.
+    // `<=`, not `<`: a direction of zero length (or a product `a * c` that
+    // underflows) makes both sides zero and must take the projection
+    // branch rather than divide by `denom`.
     let (s, t) = if denom.abs() <= PARALLEL_SIN_SQ_MAX * a * c {
         // Parallel lines: keep `p1` (s = 0) and project it onto line 2,
         // t = (d2·w) / |d2|². Line 2's own direction, not line 1's: the
@@ -943,8 +971,11 @@ mod tests {
 
     /// Two lines at an angle of 1e-7 (sin² = 1e-14, under the threshold)
     /// are parallel at every direction length, so all three scales take
-    /// the projection branch and agree. The old absolute test sent the
-    /// long vectors down the ill-conditioned oblique solve instead.
+    /// the projection branch and agree. This pins a convention, not an
+    /// accuracy gain: the branch reports the distance from a point of
+    /// line 1 to line 2 (√10 here), while the true minimum, 1e7 units
+    /// down the lines, is 3. The old absolute test gave √10 at two scales
+    /// and 3.0000002 at the third.
     #[test]
     fn line_line_closest_near_parallel_lines_agree_at_any_direction_length() {
         use super::line_line_closest;
@@ -956,7 +987,7 @@ mod tests {
         }
         let want = garust_core::Real::sqrt(10.0_f64); // offset (0, 1, 3)
         for d in dists {
-            assert!((d - want).abs() < 1e-6, "dists = {dists:?}");
+            assert!((d - want).abs() < 1e-9, "dists = {dists:?}");
         }
     }
 }
