@@ -88,7 +88,7 @@ fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
 pub struct Sphere {
     /// Centre in the world frame (typically a body's [`RigidBody::position`]).
     pub center: [f64; 3],
-    /// Radius.
+    /// Radius; must be finite and non-negative.
     pub radius: f64,
 }
 
@@ -112,9 +112,13 @@ impl Sphere {
     /// Contact with another sphere, or `None` if they don't overlap. The
     /// normal points from `self` toward `other`.
     ///
-    /// Expects non-negative radii. Returns `None` when the spheres are
-    /// apart or exactly touching (no penetration), and when the centres
-    /// coincide: with no line of centres there is no normal to report.
+    /// Returns `None` when the spheres are apart or exactly touching (no
+    /// penetration), and when the centres coincide: with no line of centres
+    /// there is no normal to report.
+    ///
+    /// Centres and radii must be finite and the radii non-negative; this
+    /// is not checked. Outside that range the result is meaningless (a
+    /// negative radius can yield a negative `depth`, a NaN yields NaN).
     ///
     /// ```
     /// use garust_physics::contact::Sphere;
@@ -161,7 +165,8 @@ impl Sphere {
     ///
     /// `normal` must be a unit vector; it is not checked or normalised, and
     /// it is returned unchanged as the contact normal. A sphere exactly
-    /// resting on the plane (depth `0`) is not a contact.
+    /// resting on the plane (depth `0`) is not a contact. All inputs must
+    /// be finite and the radius non-negative, also unchecked.
     ///
     /// ```
     /// use garust_physics::contact::Sphere;
@@ -212,23 +217,23 @@ impl Sphere {
 /// Total linear momentum is conserved; with `e = 1` and `mu = 0` so is KE.
 /// A no-op if the bodies are already separating.
 ///
-/// Both masses must be positive and `contact.normal` a unit vector pointing
-/// from `a` toward `b`; neither is checked.
+/// Both masses must be positive and finite and `contact.normal` a unit
+/// vector pointing from `a` toward `b`; neither is checked.
 ///
 /// ```
 /// use garust_physics::{RigidBody, contact::{resolve_pair, Contact}};
 ///
 /// let hit = Contact { normal: [1.0, 0.0, 0.0], depth: 0.5, point: [0.75, 0.0, 0.0] };
-/// let mut a = RigidBody::new(3.0);
-/// let mut b = RigidBody::new(1.0);
+/// let mut a = RigidBody::new(2.0);
+/// let mut b = RigidBody::new(2.0);
 /// b.position = [1.5, 0.0, 0.0];
-/// a.linear_momentum = [6.0, 0.0, 0.0]; // a closes on b at speed 2
+/// a.linear_momentum = [8.0, 0.0, 0.0]; // a closes on b at speed 4
 ///
 /// resolve_pair(&mut a, &mut b, &hit, 0.0, 0.0); // perfectly inelastic
-/// // They leave together at the common velocity 6 / (3 + 1) = 1.5.
-/// assert_eq!(a.velocity(), [1.5, 0.0, 0.0]);
-/// assert_eq!(b.velocity(), [1.5, 0.0, 0.0]);
-/// assert_eq!(a.linear_momentum[0] + b.linear_momentum[0], 6.0);
+/// // They leave together at the common velocity 8 / (2 + 2) = 2.
+/// assert_eq!(a.velocity(), [2.0, 0.0, 0.0]);
+/// assert_eq!(b.velocity(), [2.0, 0.0, 0.0]);
+/// assert_eq!(a.linear_momentum[0] + b.linear_momentum[0], 8.0);
 ///
 /// // Degenerate: already separating, so the contact is left alone.
 /// b.linear_momentum = [9.0, 0.0, 0.0];
@@ -311,8 +316,9 @@ pub fn resolve_pair(
 /// restitution `e` and optional Coulomb friction `mu`. `contact.normal` points
 /// away from the surface. A no-op if the body is already moving away.
 ///
-/// The mass must be positive and `contact.normal` a unit vector; neither
-/// is checked.
+/// `restitution` ∈ [0, 1] and `mu` ∈ [0, ∞) as in [`resolve_pair`];
+/// `mu = 0` turns friction off. The mass must be positive and finite and
+/// `contact.normal` a unit vector; none of this is checked.
 ///
 /// ```
 /// use garust_physics::{RigidBody, contact::{resolve_static, Contact}};
@@ -400,6 +406,10 @@ fn apply_angular_impulse(body: &mut RigidBody, torque: [f64; 3]) {
 /// let floor = Pga3::plane(1.0, 0.0, 0.0, -1.0);
 /// assert!((point_plane_distance([2.0, 0.0, 0.0], &floor) - 1.0).abs() < 1e-12);
 /// assert!((point_plane_distance([0.0, 0.0, 0.0], &floor) + 1.0).abs() < 1e-12);
+///
+/// // Degenerate: a "plane" with no normal has no distance to anything.
+/// let no_normal = Pga3::plane(0.0, 0.0, 0.0, 5.0);
+/// assert_eq!(point_plane_distance([1.0, 2.0, 3.0], &no_normal), 0.0);
 /// ```
 pub fn point_plane_distance(pt: [f64; 3], plane: &Pga3) -> f64 {
     // Grade-1 PGA: a=coeffs[1] (e1), b=coeffs[2] (e2), c=coeffs[4] (e3),
@@ -536,7 +546,7 @@ fn skew_closest(
 pub struct Aabb {
     /// World-space centre.
     pub center: [f64; 3],
-    /// Half-widths along x, y, z.
+    /// Half-widths along x, y, z; each must be finite and non-negative.
     pub half: [f64; 3],
 }
 
@@ -546,8 +556,13 @@ impl Aabb {
     /// Returns a `Contact` if the boxes overlap, with normal pointing from
     /// `self` toward `other` along the axis of minimum penetration.
     /// Returns `None` if they are separated on any axis, or touch on a face
-    /// without overlapping. Expects non-negative half-extents. The contact
-    /// point is the midpoint of the two centres.
+    /// without overlapping. When two axes tie for the minimum penetration
+    /// the lower one (x, then y) wins. The contact point is the midpoint of
+    /// the two centres, which for boxes of unequal size is an approximation
+    /// and need not lie in the overlap.
+    ///
+    /// Centres and half-extents must be finite and the half-extents
+    /// non-negative; this is not checked.
     ///
     /// ```
     /// use garust_physics::contact::Aabb;
