@@ -33,6 +33,22 @@ use garust_geo::Motor;
 use crate::contact::{resolve_pair, resolve_static, Contact, Sphere};
 use crate::{Inertia, RigidBody};
 
+/// Total effective inverse mass along a constraint direction below which
+/// the joint row is skipped. Protects the impulse
+/// `lambda = -(v_rel + bias) / inv_total` from a division by zero. The
+/// total is zero when neither end can move: both ends [`STATIC`] (where
+/// the impulse would be discarded anyway) or, the case that matters, a
+/// body of infinite mass and inertia, whose momentum would otherwise
+/// become infinite or NaN. The threshold is absolute, in 1/mass: a row
+/// whose bodies total more than 1e30 mass units is skipped too.
+const INV_MASS_MIN: f64 = 1e-30;
+
+/// Length below which a prismatic joint's world-space axis is treated as
+/// degenerate and the joint is skipped for the step. Protects the axis
+/// normalisation `d / |d|` from producing a NaN direction when the two
+/// points that define the axis coincide.
+const AXIS_LEN_MIN: f64 = 1e-12;
+
 /// A simulated body: its dynamics state, inertia, sphere-collider radius, and
 /// restitution (bounciness, `0` dead … `1` perfectly elastic).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -423,7 +439,7 @@ fn solve_ball_socket(
             eff_inv_mass(&bodies[a], r_a, n)
         };
         let inv_total = inv_a + inv_b;
-        if inv_total < 1e-30 {
+        if inv_total < INV_MASS_MIN {
             continue;
         }
 
@@ -477,7 +493,7 @@ fn solve_prismatic(bodies: &mut [Body], g: &PrismaticGeom, dt: f64, baumgarte: f
     // queda muerto y `-D warnings` lo rechaza. Mismo patrón que
     // chain.rs:201, que arregló este mismo rompimiento en geo.
     let len = garust_core::Real::sqrt(jdot(d, d));
-    if len < 1e-12 {
+    if len < AXIS_LEN_MIN {
         return; // degenerate axis: nothing well-defined to constrain
     }
     let d = [d[0] / len, d[1] / len, d[2] / len];
@@ -536,7 +552,7 @@ fn solve_prismatic(bodies: &mut [Body], g: &PrismaticGeom, dt: f64, baumgarte: f
             eff_inv_mass(&bodies[a], r_a, n)
         };
         let inv_total = inv_a + inv_b;
-        if inv_total < 1e-30 {
+        if inv_total < INV_MASS_MIN {
             continue;
         }
 
@@ -980,5 +996,67 @@ mod tests {
             "sagged under supported gravity: y = {}",
             bodies[0].rigid.position[1]
         );
+    }
+
+    // ── Named tolerances (G5): the degenerate case each one protects ─────
+
+    /// `INV_MASS_MIN`: an immovable body (infinite mass and inertia) pinned
+    /// to the world away from its anchor has zero effective inverse mass.
+    /// The rows are skipped, so its momentum stays exactly zero instead of
+    /// becoming infinite or NaN.
+    #[test]
+    fn joint_on_an_immovable_body_is_skipped() {
+        use super::{solve_joints, Joint, STATIC};
+
+        let mut bodies = [Body::ball(f64::INFINITY, 0.1)];
+        let rest = bodies[0].rigid.angular_momentum;
+
+        // Anchors deliberately apart, so every row has a non-zero error.
+        let joints = [
+            Joint::Fixed {
+                a: STATIC,
+                b: 0,
+                anchor_a: [1.0, 2.0, 3.0],
+                anchor_b: [0.0, 0.0, 0.0],
+            },
+            Joint::Prismatic {
+                a: STATIC,
+                b: 0,
+                anchor_a: [1.0, 2.0, 3.0],
+                anchor_b: [0.0, 0.0, 0.0],
+                axis: [1.0, 0.0, 0.0],
+            },
+        ];
+
+        solve_joints(&mut bodies, &joints, 0.001);
+        assert_eq!(bodies[0].rigid.linear_momentum, [0.0, 0.0, 0.0]);
+        assert_eq!(bodies[0].rigid.angular_momentum, rest);
+    }
+
+    /// `AXIS_LEN_MIN`: a prismatic joint with a zero axis constrains
+    /// nothing. The body keeps its free motion and stays finite.
+    #[test]
+    fn prismatic_with_a_zero_axis_constrains_nothing() {
+        use super::{Joint, STATIC};
+
+        let world = World::new().with_gravity([0.0, 0.0, 0.0]);
+        let mut bodies = [Body::ball(2.0, 0.1)];
+        bodies[0].rigid.linear_momentum = [0.0, 2.0, 0.0]; // would be blocked by a real x-axis slider
+
+        let joints = [Joint::Prismatic {
+            a: STATIC,
+            b: 0,
+            anchor_a: [0.0, 0.0, 0.0],
+            anchor_b: [0.0, 0.0, 0.0],
+            axis: [0.0, 0.0, 0.0],
+        }];
+
+        let dt = 0.001;
+        for _ in 0..100 {
+            world.step(&mut bodies, &joints, dt);
+        }
+        let p = bodies[0].rigid.position;
+        assert!((p[1] - 0.1).abs() < 1e-12, "y = {}", p[1]);
+        assert_eq!(bodies[0].rigid.linear_momentum, [0.0, 2.0, 0.0]);
     }
 }
