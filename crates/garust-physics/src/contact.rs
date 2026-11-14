@@ -867,7 +867,9 @@ mod tests {
 
     /// Parallel lines whose directions differ in sign and length: through
     /// the public API the reference points are the feet of the perpendicular
-    /// from the origin, so the separation is still exact.
+    /// from the origin, so the separation is exact with or without the
+    /// fix below. This pins the public behaviour; the next test is the one
+    /// that reproduces the defect.
     #[test]
     fn line_line_closest_antiparallel_lines_of_different_length() {
         use super::line_line_closest;
