@@ -213,8 +213,23 @@ impl Sphere {
 /// - `mu` ∈ [0, ∞): coefficient of friction; `0` = frictionless.
 ///
 /// The normal impulse magnitude uses the linear-only formula (inverse-mass
-/// sum as denominator); friction and angular transfer use the same scalar.
-/// Total linear momentum is conserved; with `e = 1` and `mu = 0` so is KE.
+/// sum as denominator), and friction uses the same inverse-mass sum.
+///
+/// Friction acts on the sliding of the centres of mass: the tangential
+/// part of `b.velocity() - a.velocity()`. It is `mu` times the normal
+/// impulse, capped at the impulse that brings that sliding to rest. Spin
+/// is not part of the sliding speed (two bodies rolling on each other with
+/// no centre-of-mass sliding get no friction), and the cap does not count
+/// the rotation the friction impulse itself produces through the lever
+/// arms. So with `mu > 0` and an off-centre contact the contact point can
+/// end up over-braked and kinetic energy is not bounded by its value
+/// before the hit. A cap that accounts for inertia needs each body's
+/// [`Inertia`](crate::Inertia), which this function does not take.
+/// Total linear momentum is conserved. With `e = 1` and `mu = 0` kinetic
+/// energy is conserved too when the contact is central (the contact point
+/// lies on the normal through both centres, as between spheres); an
+/// off-centre contact also receives an angular impulse that the
+/// linear-only formula does not account for.
 /// A no-op if the bodies are already separating.
 ///
 /// Both masses must be positive and finite and `contact.normal` a unit
@@ -275,7 +290,8 @@ pub fn resolve_pair(
     apply_angular_impulse(a, torque_a);
     apply_angular_impulse(b, torque_b);
 
-    // Coulomb friction: tangential impulse clamped to μ|j|.
+    // Coulomb friction: tangential impulse `μ·j`, capped at what stops the
+    // sliding of the centres of mass.
     if mu > 0.0 {
         let v_full = sub(b.velocity(), a.velocity());
         let v_tang = [
@@ -291,7 +307,14 @@ pub fn resolve_pair(
                 v_tang[1] / v_tang_len,
                 v_tang[2] / v_tang_len,
             ];
-            let jt = (j * mu).min(inv_mass * v_tang_len / inv_mass);
+            // Coulomb's bound `mu·j`, capped at the impulse that brings
+            // the relative sliding to rest: an impulse `jt` changes the
+            // relative tangential speed by `jt · (1/ma + 1/mb)`. Linear
+            // only, like the normal impulse above: the rotational term
+            // `|r×t|²/I` of each body is left out because the inertia is
+            // not available here, so the contact point itself can be
+            // over-braked (see the function doc).
+            let jt = (j * mu).min(v_tang_len / inv_mass);
             let ft = [t[0] * jt, t[1] * jt, t[2] * jt];
             for ((pa, pb), &f) in a
                 .linear_momentum
@@ -1108,5 +1131,59 @@ mod tests {
         for d in dists {
             assert!((d - want).abs() < 1e-9, "dists = {dists:?}");
         }
+    }
+
+    // ── Friction cap in `resolve_pair` ───────────────────────────────────
+
+    /// Two bodies of mass `m` meet along x while `b` slides along y at
+    /// speed 1, in a perfectly inelastic hit with `mu = 1`: strong enough
+    /// that Coulomb's bound `mu·j` is above what it takes to stop the
+    /// sliding. Returns both bodies after the hit.
+    fn slide_then_hit(m: f64) -> (RigidBody, RigidBody) {
+        let mut a = RigidBody::new(m);
+        let mut b = RigidBody::new(m);
+        b.position = [1.5, 0.0, 0.0];
+        a.linear_momentum = [4.0 * m, 0.0, 0.0]; // closing at speed 4
+        b.linear_momentum = [0.0, m, 0.0]; // sliding at speed 1
+        let hit = Contact {
+            normal: [1.0, 0.0, 0.0],
+            depth: 0.5,
+            point: [0.75, 0.0, 0.0],
+        };
+        resolve_pair(&mut a, &mut b, &hit, 0.0, 1.0);
+        (a, b)
+    }
+
+    /// What the scene above must leave behind, for bodies of mass `m`.
+    fn assert_sliding_stopped(m: f64) {
+        use crate::Inertia;
+        let (a, b) = slide_then_hit(m);
+        // Both centres end with the same tangential velocity: the sliding
+        // is stopped, neither reversed nor left half done.
+        assert_eq!((a.velocity()[1], b.velocity()[1]), (0.5, 0.5));
+        // Friction only moves tangential momentum between the two bodies.
+        assert_eq!(a.linear_momentum[1] + b.linear_momentum[1], m);
+        // The friction impulse `m/2` along y acts at the contact point,
+        // 0.75 from each centre along x, so each body picks up the same
+        // spin about z: 0.75 · m/2. (The normal impulse is central and
+        // adds none.)
+        let spin = Inertia::principal_planes()[2] * (0.375 * m);
+        assert_eq!(a.angular_momentum, spin);
+        assert_eq!(b.angular_momentum, spin);
+    }
+
+    /// With the cap written as a speed instead of an impulse, light bodies
+    /// overshot and swapped tangential velocities: (1, 0) instead of
+    /// (0.5, 0.5).
+    #[test]
+    fn friction_stops_sliding_without_reversing_it_light_bodies() {
+        assert_sliding_stopped(1.0);
+    }
+
+    /// Same scene with heavier bodies, where the speed-as-impulse cap was
+    /// too small and left half of the sliding in place: (0.25, 0.75).
+    #[test]
+    fn friction_stops_sliding_heavy_bodies() {
+        assert_sliding_stopped(4.0);
     }
 }
