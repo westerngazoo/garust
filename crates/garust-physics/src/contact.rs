@@ -88,7 +88,7 @@ fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
 pub struct Sphere {
     /// Centre in the world frame (typically a body's [`RigidBody::position`]).
     pub center: [f64; 3],
-    /// Radius.
+    /// Radius; must be finite and non-negative.
     pub radius: f64,
 }
 
@@ -111,6 +111,30 @@ pub struct Contact {
 impl Sphere {
     /// Contact with another sphere, or `None` if they don't overlap. The
     /// normal points from `self` toward `other`.
+    ///
+    /// Returns `None` when the spheres are apart or exactly touching (no
+    /// penetration), and when the centres coincide: with no line of centres
+    /// there is no normal to report.
+    ///
+    /// Centres and radii must be finite and the radii non-negative; this
+    /// is not checked. Outside that range the result is meaningless (a
+    /// negative radius can yield a negative `depth`, a NaN yields NaN).
+    ///
+    /// ```
+    /// use garust_physics::contact::Sphere;
+    ///
+    /// let a = Sphere { center: [0.0, 0.0, 0.0], radius: 1.0 };
+    /// let b = Sphere { center: [1.5, 0.0, 0.0], radius: 1.0 };
+    /// let hit = a.vs_sphere(&b).unwrap();
+    /// assert_eq!(hit.normal, [1.0, 0.0, 0.0]); // from a toward b
+    /// assert_eq!(hit.depth, 0.5);
+    /// assert_eq!(hit.point, [0.75, 0.0, 0.0]); // middle of the overlap
+    ///
+    /// // Rejected: touching without overlap, and concentric.
+    /// let touching = Sphere { center: [2.0, 0.0, 0.0], radius: 1.0 };
+    /// assert!(a.vs_sphere(&touching).is_none());
+    /// assert!(a.vs_sphere(&a).is_none());
+    /// ```
     pub fn vs_sphere(&self, other: &Sphere) -> Option<Contact> {
         let d = sub(other.center, self.center);
         let dist_sq = dot(d, d);
@@ -138,6 +162,28 @@ impl Sphere {
     /// Contact with the half-space below the plane `{ x : n·x = offset }`
     /// (with unit normal `n` pointing out of the surface, e.g. `[0,1,0]` for
     /// a floor at height `offset`), or `None` if the sphere is clear of it.
+    ///
+    /// `normal` must be a unit vector; it is not checked or normalised, and
+    /// it is returned unchanged as the contact normal. A sphere exactly
+    /// resting on the plane (depth `0`) is not a contact. All inputs must
+    /// be finite and the radius non-negative, also unchecked.
+    ///
+    /// ```
+    /// use garust_physics::contact::Sphere;
+    ///
+    /// let floor = ([0.0, 1.0, 0.0], 0.0); // y = 0, solid below
+    /// let ball = Sphere { center: [0.0, 0.5, 0.0], radius: 1.0 };
+    /// let hit = ball.vs_plane(floor.0, floor.1).unwrap();
+    /// assert_eq!(hit.normal, [0.0, 1.0, 0.0]);
+    /// assert_eq!(hit.depth, 0.5);
+    /// assert_eq!(hit.point, [0.0, -0.5, 0.0]); // lowest point of the ball
+    ///
+    /// // Rejected: resting exactly on the floor, and well above it.
+    /// let resting = Sphere { center: [0.0, 1.0, 0.0], radius: 1.0 };
+    /// let high = Sphere { center: [0.0, 5.0, 0.0], radius: 1.0 };
+    /// assert!(resting.vs_plane(floor.0, floor.1).is_none());
+    /// assert!(high.vs_plane(floor.0, floor.1).is_none());
+    /// ```
     pub fn vs_plane(&self, normal: [f64; 3], offset: f64) -> Option<Contact> {
         let signed = dot(self.center, normal) - offset; // centre's height above the plane
         let depth = self.radius - signed;
@@ -170,6 +216,31 @@ impl Sphere {
 /// sum as denominator); friction and angular transfer use the same scalar.
 /// Total linear momentum is conserved; with `e = 1` and `mu = 0` so is KE.
 /// A no-op if the bodies are already separating.
+///
+/// Both masses must be positive and finite and `contact.normal` a unit
+/// vector pointing from `a` toward `b`; neither is checked.
+///
+/// ```
+/// use garust_physics::{RigidBody, contact::{resolve_pair, Contact}};
+///
+/// let hit = Contact { normal: [1.0, 0.0, 0.0], depth: 0.5, point: [0.75, 0.0, 0.0] };
+/// let mut a = RigidBody::new(2.0);
+/// let mut b = RigidBody::new(2.0);
+/// b.position = [1.5, 0.0, 0.0];
+/// a.linear_momentum = [8.0, 0.0, 0.0]; // a closes on b at speed 4
+///
+/// resolve_pair(&mut a, &mut b, &hit, 0.0, 0.0); // perfectly inelastic
+/// // They leave together at the common velocity 8 / (2 + 2) = 2.
+/// assert_eq!(a.velocity(), [2.0, 0.0, 0.0]);
+/// assert_eq!(b.velocity(), [2.0, 0.0, 0.0]);
+/// assert_eq!(a.linear_momentum[0] + b.linear_momentum[0], 8.0);
+///
+/// // Degenerate: already separating, so the contact is left alone.
+/// b.linear_momentum = [9.0, 0.0, 0.0];
+/// let before = (a.linear_momentum, b.linear_momentum);
+/// resolve_pair(&mut a, &mut b, &hit, 1.0, 0.5);
+/// assert_eq!((a.linear_momentum, b.linear_momentum), before);
+/// ```
 pub fn resolve_pair(
     a: &mut RigidBody,
     b: &mut RigidBody,
@@ -244,6 +315,26 @@ pub fn resolve_pair(
 /// effectively infinite mass), reflecting the body's normal velocity with
 /// restitution `e` and optional Coulomb friction `mu`. `contact.normal` points
 /// away from the surface. A no-op if the body is already moving away.
+///
+/// `restitution` ∈ [0, 1] and `mu` ∈ [0, ∞) as in [`resolve_pair`];
+/// `mu = 0` turns friction off. The mass must be positive and finite and
+/// `contact.normal` a unit vector; none of this is checked.
+///
+/// ```
+/// use garust_physics::{RigidBody, contact::{resolve_static, Contact}};
+///
+/// let floor_hit = Contact { normal: [0.0, 1.0, 0.0], depth: 0.5, point: [0.0, 0.0, 0.0] };
+/// let mut ball = RigidBody::new(2.0);
+/// ball.position = [0.0, 0.5, 0.0];
+/// ball.linear_momentum = [0.0, -4.0, 0.0]; // falling at speed 2
+///
+/// resolve_static(&mut ball, &floor_hit, 1.0, 0.0); // elastic, frictionless
+/// assert_eq!(ball.linear_momentum, [0.0, 4.0, 0.0]); // bounces back at speed 2
+///
+/// // Degenerate: now rising, so a second call changes nothing.
+/// resolve_static(&mut ball, &floor_hit, 1.0, 0.0);
+/// assert_eq!(ball.linear_momentum, [0.0, 4.0, 0.0]);
+/// ```
 pub fn resolve_static(body: &mut RigidBody, contact: &Contact, restitution: f64, mu: f64) {
     let n = contact.normal;
     let v_rel = dot(body.velocity(), n);
@@ -315,6 +406,10 @@ fn apply_angular_impulse(body: &mut RigidBody, torque: [f64; 3]) {
 /// let floor = Pga3::plane(1.0, 0.0, 0.0, -1.0);
 /// assert!((point_plane_distance([2.0, 0.0, 0.0], &floor) - 1.0).abs() < 1e-12);
 /// assert!((point_plane_distance([0.0, 0.0, 0.0], &floor) + 1.0).abs() < 1e-12);
+///
+/// // Degenerate: a "plane" with no normal has no distance to anything.
+/// let no_normal = Pga3::plane(0.0, 0.0, 0.0, 5.0);
+/// assert_eq!(point_plane_distance([1.0, 2.0, 3.0], &no_normal), 0.0);
 /// ```
 pub fn point_plane_distance(pt: [f64; 3], plane: &Pga3) -> f64 {
     // Grade-1 PGA: a=coeffs[1] (e1), b=coeffs[2] (e2), c=coeffs[4] (e3),
@@ -451,7 +546,7 @@ fn skew_closest(
 pub struct Aabb {
     /// World-space centre.
     pub center: [f64; 3],
-    /// Half-widths along x, y, z.
+    /// Half-widths along x, y, z; each must be finite and non-negative.
     pub half: [f64; 3],
 }
 
@@ -460,7 +555,31 @@ impl Aabb {
     ///
     /// Returns a `Contact` if the boxes overlap, with normal pointing from
     /// `self` toward `other` along the axis of minimum penetration.
-    /// Returns `None` if they are separated on any axis.
+    /// Returns `None` if they are separated on any axis, or touch on a face
+    /// without overlapping. When two axes tie for the minimum penetration
+    /// the lower one (x, then y) wins. The contact point is the midpoint of
+    /// the two centres, which for boxes of unequal size is an approximation
+    /// and need not lie in the overlap.
+    ///
+    /// Centres and half-extents must be finite and the half-extents
+    /// non-negative; this is not checked.
+    ///
+    /// ```
+    /// use garust_physics::contact::Aabb;
+    ///
+    /// let a = Aabb { center: [0.0, 0.0, 0.0], half: [1.0, 1.0, 1.0] };
+    /// let b = Aabb { center: [1.5, 0.25, 0.0], half: [1.0, 1.0, 1.0] };
+    /// let hit = a.vs_aabb(&b).unwrap();
+    /// assert_eq!(hit.normal, [1.0, 0.0, 0.0]); // x is the shallowest axis
+    /// assert_eq!(hit.depth, 0.5);
+    /// assert_eq!(hit.point, [0.75, 0.125, 0.0]);
+    ///
+    /// // Rejected: separated along y, and touching faces along x.
+    /// let above = Aabb { center: [0.0, 5.0, 0.0], half: [1.0, 1.0, 1.0] };
+    /// let touching = Aabb { center: [2.0, 0.0, 0.0], half: [1.0, 1.0, 1.0] };
+    /// assert!(a.vs_aabb(&above).is_none());
+    /// assert!(a.vs_aabb(&touching).is_none());
+    /// ```
     pub fn vs_aabb(&self, other: &Self) -> Option<Contact> {
         let mut min_depth = f64::MAX;
         let mut min_axis = 0;
