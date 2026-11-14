@@ -214,7 +214,11 @@ impl Sphere {
 ///
 /// The normal impulse magnitude uses the linear-only formula (inverse-mass
 /// sum as denominator); friction and angular transfer use the same scalar.
-/// Total linear momentum is conserved; with `e = 1` and `mu = 0` so is KE.
+/// Total linear momentum is conserved. With `e = 1` and `mu = 0` kinetic
+/// energy is conserved too when the contact is central (the contact point
+/// lies on the normal through both centres, as between spheres); an
+/// off-centre contact also receives an angular impulse that the
+/// linear-only formula does not account for.
 /// A no-op if the bodies are already separating.
 ///
 /// Both masses must be positive and finite and `contact.normal` a unit
@@ -291,7 +295,11 @@ pub fn resolve_pair(
                 v_tang[1] / v_tang_len,
                 v_tang[2] / v_tang_len,
             ];
-            let jt = (j * mu).min(inv_mass * v_tang_len / inv_mass);
+            // Coulomb's bound `mu·j`, capped at the impulse that brings
+            // the relative sliding to rest: an impulse `jt` changes the
+            // relative tangential speed by `jt · (1/ma + 1/mb)`. Linear
+            // only, like the normal impulse above.
+            let jt = (j * mu).min(v_tang_len / inv_mass);
             let ft = [t[0] * jt, t[1] * jt, t[2] * jt];
             for ((pa, pb), &f) in a
                 .linear_momentum
@@ -1108,5 +1116,45 @@ mod tests {
         for d in dists {
             assert!((d - want).abs() < 1e-9, "dists = {dists:?}");
         }
+    }
+
+    // ── Friction cap in `resolve_pair` ───────────────────────────────────
+
+    /// Two bodies of mass `m` meet along x while `b` slides along y at
+    /// speed 1. Returns the tangential (y) velocities of `a` and `b`
+    /// after a perfectly inelastic hit with `mu = 1`, strong enough that
+    /// Coulomb's bound `mu·j` is above what it takes to stop the sliding.
+    fn slide_then_hit(m: f64) -> (f64, f64) {
+        let mut a = RigidBody::new(m);
+        let mut b = RigidBody::new(m);
+        b.position = [1.5, 0.0, 0.0];
+        a.linear_momentum = [4.0 * m, 0.0, 0.0]; // closing at speed 4
+        b.linear_momentum = [0.0, m, 0.0]; // sliding at speed 1
+        let hit = Contact {
+            normal: [1.0, 0.0, 0.0],
+            depth: 0.5,
+            point: [0.75, 0.0, 0.0],
+        };
+        resolve_pair(&mut a, &mut b, &hit, 0.0, 1.0);
+        // Friction only moves tangential momentum between the two bodies.
+        assert_eq!(a.linear_momentum[1] + b.linear_momentum[1], m);
+        (a.velocity()[1], b.velocity()[1])
+    }
+
+    /// Friction strong enough to stop the sliding stops it: both bodies end
+    /// with the same tangential velocity. With the cap written as a speed
+    /// instead of an impulse, light bodies overshot and swapped velocities.
+    #[test]
+    fn friction_stops_sliding_without_reversing_it_light_bodies() {
+        let (va, vb) = slide_then_hit(1.0);
+        assert_eq!((va, vb), (0.5, 0.5));
+    }
+
+    /// Same scene with heavier bodies, where the speed-as-impulse cap was
+    /// too small and left half of the sliding in place.
+    #[test]
+    fn friction_stops_sliding_heavy_bodies() {
+        let (va, vb) = slide_then_hit(4.0);
+        assert_eq!((va, vb), (0.5, 0.5));
     }
 }
