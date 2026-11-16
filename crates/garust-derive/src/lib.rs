@@ -23,6 +23,10 @@
 //! assert_eq!((e1 * e1).scalar_part(), 1.0);
 //! ```
 //!
+//! (The block is `ignore` only because this crate cannot depend on `garust`
+//! to run it. The same use of the derive is compiled and tested in
+//! `garust-geo`, under its `derive` feature.)
+//!
 //! Enable it through the umbrella crate's feature: `garust = { version =
 //! "…", features = ["derive"] }` (or `garust-core` with the same feature).
 //! Don't depend on `garust-derive` directly — it's re-exported as

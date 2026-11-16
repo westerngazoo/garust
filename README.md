@@ -7,9 +7,11 @@ A from-scratch, **zero-dependency** implementation of Geometric Algebra
 precision at the type level: 2D/3D Euclidean, Projective (PGA), Conformal
 (CGA), Spacetime (STA), over `f64`, `f32`, or any scalar type you supply.
 
+garust is not published on crates.io yet; depend on it from git:
+
 ```toml
 [dependencies]
-garust = "0.1"
+garust = { git = "https://github.com/westerngazoo/garust" }
 ```
 
 ## The signature `Cl(P, Q, R)` in one paragraph
@@ -200,7 +202,8 @@ All are off by default except `std`:
 - `derive` — the `#[derive(Algebra)]` proc-macro.
 - `serde` — `Serialize` / `Deserialize` for every type.
 - `bytemuck` — `Pod` / `Zeroable` for zero-copy reinterpretation (GPU buffers).
-- `simd` — SoA SIMD batch transforms (`Motor` / `Conformal::apply_each_simd`),
+- `simd` — SoA SIMD batch transforms (`Motor` / `Conformal::apply_each_simd`)
+  and the single-point kernel `Motor::apply_point_fast`,
   via the stable [`wide`] crate.
 
 [`libm`]: https://crates.io/crates/libm
@@ -210,7 +213,8 @@ All are off by default except `std`:
 
 **Always benchmark in `--release`.** Geometric algebra is arithmetic-dense, so
 a debug build runs ~25× slower than release. A single PGA `Motor::apply`
-(transform a point) on this machine:
+(transform a point) on the maintainer's development machine (absolute
+numbers vary between machines; the ratios are what carry over):
 
 | build   | ns/op | ops/sec |
 |---------|-------|---------|
@@ -233,8 +237,9 @@ on huge point clouds is your bottleneck, use a matrix library.** garust earns
 its place on what matrices *can't* give cheaply: no gimbal lock, compact and
 smoothly-composable motors (`log` / `slerp` on the manifold), unified
 incidence (meet / join), and exact geometry in degenerate metrics like PGA.
-(A klein-style SIMD-packed specialized motor·point kernel can reach matrix
-parity; garust doesn't ship one yet.)
+For a single point there is also a specialized kernel,
+`Motor::apply_point_fast` under the `simd` feature, which skips the generic
+sandwich: about 18× faster than `apply` in the `transforms` benchmark.
 
 **The pragmatic bridge: `Motor::to_matrix()`.** Keep poses as motors for the
 math (no gimbal lock, `compose` / `log` / `slerp`), then convert to a 4×4

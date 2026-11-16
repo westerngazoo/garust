@@ -18,10 +18,12 @@
 //! of mass; the two are independent for a force applied at the centre of
 //! mass, so the composed step is symplectic in all six degrees of freedom.
 //!
-//! Collision detection and frictionless impulse response for **spheres** live
-//! in [`contact`], and [`World`] drives the whole `integrate → detect →
-//! resolve` loop over a slice of bodies. A broadphase, friction, and
-//! flat-vs-flat contacts are the next slices of RFC-010.
+//! Collision detection (spheres, planes, axis-aligned boxes) and impulse
+//! response with restitution and Coulomb friction live in [`contact`], and
+//! [`World`] drives the whole `integrate → detect → resolve → constrain` loop
+//! over a slice of bodies, with hinge, fixed and prismatic joints. A
+//! broadphase and contacts between general convex shapes are later work
+//! (RFC-015, M3).
 //!
 //! ```
 //! use garust_physics::{Inertia, RigidBody};
@@ -39,7 +41,7 @@
 //! }
 //! // Symplectic ⇒ total (rotational + translational) energy stays put,
 //! assert!((body.kinetic_energy(&inertia) - e0).abs() < 1e-6);
-//! // and the centre of mass has drifted ~40 units along x.
+//! // and the centre of mass has drifted 20 units along x (speed 2 for 10 s).
 //! assert!((body.position[0] - 20.0).abs() < 1e-9);
 //! ```
 
