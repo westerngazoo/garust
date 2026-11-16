@@ -62,22 +62,48 @@ impl<'a> Tree<'a> {
     /// in `q`.
     #[must_use]
     pub fn new(links: &'a [TreeLink]) -> Self {
-        assert!(!links.is_empty(), "a tree needs at least one link");
-        assert!(
-            links.len() <= MAX_LINKS,
-            "tree has {} links, cap is {MAX_LINKS}",
-            links.len()
-        );
-        for (i, l) in links.iter().enumerate() {
-            if let Some(p) = l.parent {
-                assert!(
-                    p < i,
-                    "link {i} hangs from {p}: parents must come first, so \
-                     forward kinematics stays a single pass"
-                );
-            }
+        match shape_error(links) {
+            None => Self { links },
+            // G3 last-resort assertions: a tree written in code has a known
+            // shape; a tree loaded from data (a robot description) has
+            // `try_new`.
+            Some(ShapeError::Empty) => panic!("a tree needs at least one link"),
+            Some(ShapeError::TooMany(n)) => panic!("tree has {n} links, cap is {MAX_LINKS}"),
+            Some(ShapeError::ParentAfter { link, parent }) => panic!(
+                "link {link} hangs from {parent}: parents must come first, so \
+                 forward kinematics stays a single pass"
+            ),
         }
-        Self { links }
+    }
+
+    /// Wrap a slice of links as a tree, or `None` if it is empty, longer
+    /// than [`MAX_LINKS`], or has a link whose parent does not come before
+    /// it. The fallible form of [`new`](Tree::new), for trees that come
+    /// from data.
+    ///
+    /// ```
+    /// use garust_geo::chain::ChainJoint;
+    /// use garust_geo::tree::{Tree, TreeLink};
+    /// use garust_geo::Motor;
+    ///
+    /// let link = |parent| TreeLink {
+    ///     parent,
+    ///     offset: Motor::identity(),
+    ///     joint: ChainJoint::Prismatic([1.0, 0.0, 0.0]),
+    /// };
+    /// let arm = [link(None), link(Some(0)), link(Some(0))]; // a fork
+    /// assert_eq!(Tree::try_new(&arm).map(|t| t.dof()), Some(3));
+    ///
+    /// // Rejected: no links, and a link hanging from a later one.
+    /// assert!(Tree::try_new(&[]).is_none());
+    /// assert!(Tree::try_new(&[link(Some(1)), link(None)]).is_none());
+    /// ```
+    #[must_use]
+    pub fn try_new(links: &'a [TreeLink]) -> Option<Self> {
+        match shape_error(links) {
+            None => Some(Self { links }),
+            Some(_) => None,
+        }
     }
 
     /// How many joint variables the tree takes — one per link.
@@ -100,6 +126,8 @@ impl<'a> Tree<'a> {
     ///
     /// If `q` or `poses` is not exactly [`Tree::dof`] long.
     pub fn fk(&self, q: &[f64], poses: &mut [Motor<f64>]) {
+        // G3 last-resort assertions: `q` and `poses` are sized by the caller
+        // for this tree; a wrong length is a bug in that code, not data.
         assert_eq!(q.len(), self.links.len(), "joint vector length != dof");
         assert_eq!(poses.len(), self.links.len(), "poses length != dof");
         for (i, (link, &qi)) in self.links.iter().zip(q.iter()).enumerate() {
@@ -131,11 +159,54 @@ impl<'a> Tree<'a> {
     }
 }
 
+/// Why a slice of links is not a valid tree: the shared check behind
+/// [`Tree::new`] (which reports it in a panic message) and
+/// [`Tree::try_new`] (which returns `None`).
+enum ShapeError {
+    Empty,
+    TooMany(usize),
+    ParentAfter { link: usize, parent: usize },
+}
+
+/// The first reason `links` is not a valid tree, or `None` if it is one.
+fn shape_error(links: &[TreeLink]) -> Option<ShapeError> {
+    if links.is_empty() {
+        return Some(ShapeError::Empty);
+    }
+    if links.len() > MAX_LINKS {
+        return Some(ShapeError::TooMany(links.len()));
+    }
+    links
+        .iter()
+        .enumerate()
+        .find_map(|(link, l)| match l.parent {
+            Some(parent) if parent >= link => Some(ShapeError::ParentAfter { link, parent }),
+            _ => None,
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::{Tree, TreeLink};
     use crate::chain::{Chain, ChainJoint, Link};
     use crate::Motor;
+
+    #[test]
+    #[should_panic(expected = "a tree needs at least one link")]
+    fn empty_tree_is_refused() {
+        let _ = Tree::new(&[]);
+    }
+
+    #[test]
+    #[should_panic(expected = "tree has 65 links, cap is 64")]
+    fn oversized_tree_is_refused() {
+        let link = TreeLink {
+            parent: None,
+            offset: Motor::identity(),
+            joint: ChainJoint::Prismatic([1.0, 0.0, 0.0]),
+        };
+        let _ = Tree::new(&[link; super::MAX_LINKS + 1]);
+    }
     use garust_core::Pga3;
 
     fn z_axis() -> Pga3 {

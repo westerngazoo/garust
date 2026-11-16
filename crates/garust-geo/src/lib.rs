@@ -37,6 +37,7 @@ pub mod twolink;
 // backs the `apply_each_simd` methods on `Motor`/`Conformal`.
 #[cfg(feature = "simd")]
 mod simd;
+mod versor;
 
 pub use conformal::Conformal;
 pub use motor::Motor;

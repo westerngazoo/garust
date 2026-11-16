@@ -118,11 +118,17 @@ impl<T: Scalar> Conformal<T> {
         }
     }
 
-    /// The inverse transformation, undoing this one. Built from the
-    /// versor inverse, so `c.compose(&c.inverse())` is the identity.
+    /// The inverse transformation, undoing this one: `~V / ⟨V ~V⟩₀`, so
+    /// `c.compose(&c.inverse())` is the identity.
+    ///
+    /// Never panics. It relies on the type's invariant that the value is a
+    /// versor (every constructor builds one) instead of re-checking it, so
+    /// numerical drift does not turn it into a crash. A value wrapped by
+    /// [`from_versor`](Conformal::from_versor) from something that is not a
+    /// versor gets a meaningless result.
     pub fn inverse(&self) -> Self {
         Self {
-            versor: self.versor.versor_inverse(),
+            versor: crate::versor::inverse_by_construction(&self.versor),
         }
     }
 
@@ -226,7 +232,7 @@ impl<T: Real> Conformal<T> {
     /// intermediate scales (geometric mean at `t = ½`), and mixtures
     /// spiral. `t` outside `[0, 1]` extrapolates.
     pub fn slerp(&self, other: &Self, t: T) -> Self {
-        let delta = (other.versor * self.versor.versor_inverse()).log();
+        let delta = (other.versor * self.inverse().versor).log();
         Self {
             versor: (delta * t).exp() * self.versor,
         }
@@ -246,6 +252,23 @@ mod tests {
     use super::Conformal;
     use garust_core::Cga3;
     use std::f64::consts::TAU;
+
+    /// G3: a conformal versor that drifted past the kernel's strict versor
+    /// check for inversion (here by 1e-8 along a grade-4 blade; the check
+    /// is 1e-10) is still inverted and interpolated without a panic.
+    #[test]
+    fn inverse_and_slerp_of_a_drifted_versor_do_not_panic() {
+        let c = Conformal::translator(1.0, 0.0, 0.0) * Conformal::dilator(2.0);
+        let d = Conformal::from_versor(c.versor() + Cga3::basis(0b01111) * 1e-8);
+        assert!(
+            d.versor().try_versor_inverse().is_none(),
+            "the drift must trip the check"
+        );
+        let id = d.compose(&d.inverse()).versor();
+        assert!((id.coeffs[0] - 1.0).abs() < 1e-6);
+        let mid = d.slerp(&Conformal::identity(), 0.5);
+        assert!(mid.versor().coeffs.iter().all(|x| x.is_finite()));
+    }
 
     fn approx(a: (f64, f64, f64), b: (f64, f64, f64)) {
         assert!((a.0 - b.0).abs() < 1e-10, "x: {} vs {}", a.0, b.0);
