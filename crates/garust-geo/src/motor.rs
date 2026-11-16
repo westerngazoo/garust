@@ -118,16 +118,51 @@ impl<T: Scalar> Motor<T> {
     /// The inverse motion, undoing this one: `~M / ⟨M ~M⟩₀`, so
     /// `m.compose(&m.inverse())` is the identity.
     ///
-    /// Never panics. It relies on the type's invariant that the motor is a
-    /// versor (every constructor builds one) instead of re-checking it, so
-    /// numerical drift after many compositions does not turn it into a
-    /// crash. A motor wrapped by [`from_versor`](Motor::from_versor) from
-    /// something that is not a versor gets a meaningless result, and one of
-    /// zero norm gets non-finite coefficients.
+    /// Never panics for floating-point `T`. It relies on the type's
+    /// invariant that the motor is a versor (every constructor builds one)
+    /// instead of re-checking it, so rounding drift does not turn it into a
+    /// crash; in `f32` a single composition already drifts past the
+    /// kernel's strict check. A motor wrapped by
+    /// [`from_versor`](Motor::from_versor), or deserialized, from something
+    /// that is not a versor gets a meaningless result, and one of zero norm
+    /// gets non-finite coefficients. For motors that come from data, use
+    /// [`try_inverse`](Motor::try_inverse).
+    ///
+    /// ```
+    /// use garust_core::Pga3;
+    /// use garust_geo::Motor;
+    ///
+    /// let m = Motor::translator(1.0, 2.0, 3.0) * Motor::rotor(0.5, Pga3::basis(0b0011));
+    /// let id = m.compose(&m.inverse()).versor();
+    /// assert!((id.coeffs[0] - 1.0).abs() < 1e-12);
+    /// ```
     pub fn inverse(&self) -> Self {
         Self {
             versor: crate::versor::inverse_by_construction(&self.versor),
         }
+    }
+
+    /// The inverse motion, or `None` if the wrapped multivector is not a
+    /// versor within the kernel's tolerance (see
+    /// `Multivector::try_versor_inverse`). For motors that come from data
+    /// (`from_versor`, serde, bytemuck); motors built in code use
+    /// [`inverse`](Motor::inverse).
+    ///
+    /// ```
+    /// use garust_core::Pga3;
+    /// use garust_geo::Motor;
+    ///
+    /// let m = Motor::rotor(0.5, Pga3::basis(0b0011));
+    /// assert_eq!(m.try_inverse(), Some(m.inverse()));
+    ///
+    /// // Rejected: `1 + e1` wrapped as a motor is not a versor.
+    /// let bogus = Motor::from_versor(Pga3::one() + Pga3::basis(1));
+    /// assert!(bogus.try_inverse().is_none());
+    /// ```
+    pub fn try_inverse(&self) -> Option<Self> {
+        self.versor
+            .try_versor_inverse()
+            .map(|versor| Self { versor })
     }
 
     /// `⟨M ~M⟩_0`. A unit motor (every rotor/translator and their
@@ -567,6 +602,11 @@ impl<T: Real> Motor<T> {
     /// let mid = Motor::rotor(theta / 2.0, Pga3::basis(0b0011));
     /// assert!(id.slerp(&near, 0.5).geodesic_distance(&mid) < 1e-9);
     /// ```
+    ///
+    /// Release builds never panic here. Debug builds assert the versor
+    /// contract inside `log` (`R ~R` within 1e-6 of 1); a long chain of
+    /// `f32` compositions can drift past that, so call
+    /// [`renormalize`](Motor::renormalize) every so often in such loops.
     pub fn slerp(&self, other: &Self, t: T) -> Self {
         self.slerp_from_generator(&self.screw_generator(other), t)
     }
@@ -794,6 +834,28 @@ mod tests {
     fn inverse_of_the_zero_motor_is_non_finite_not_a_panic() {
         let z = Motor::from_versor(Pga3::zero());
         assert!(z.inverse().versor().coeffs.iter().any(|c| !c.is_finite()));
+    }
+
+    /// The case that made this a real crash: in `f32`, a single
+    /// composition of a translator and two rotors already leaves `M ~M`
+    /// non-scalar beyond the kernel's check, so the old `inverse` panicked
+    /// on ordinary motors. No synthetic drift here.
+    #[test]
+    fn inverse_of_a_composed_f32_motor_does_not_panic() {
+        use garust_core::Pga3f;
+        let m = Motor::<f32>::translator(1.0, 2.0, 0.5)
+            * Motor::rotor(0.7, Pga3f::basis(0b0011))
+            * Motor::rotor(0.3, Pga3f::basis(0b0110));
+        assert!(
+            m.versor().try_versor_inverse().is_none(),
+            "f32 rounding trips the check"
+        );
+        assert!(m.try_inverse().is_none());
+        let id = m.compose(&m.inverse()).versor();
+        assert!((id.coeffs[0] - 1.0).abs() < 1e-5);
+        assert!(id.coeffs[1..].iter().all(|c| c.abs() < 1e-5));
+        let mid = m.slerp(&Motor::identity(), 0.5);
+        assert!(mid.versor().coeffs.iter().all(|c| c.is_finite()));
     }
 
     #[test]

@@ -59,7 +59,7 @@ impl<'a> Tree<'a> {
     /// parent index is not strictly less than its own. The ordering
     /// requirement is checked rather than sorted for: silently reordering
     /// would invalidate every index the caller holds, including the ones
-    /// in `q`.
+    /// in `q`. [`try_new`](Tree::try_new) returns `None` instead.
     #[must_use]
     pub fn new(links: &'a [TreeLink]) -> Self {
         match shape_error(links) {

@@ -121,15 +121,47 @@ impl<T: Scalar> Conformal<T> {
     /// The inverse transformation, undoing this one: `~V / ⟨V ~V⟩₀`, so
     /// `c.compose(&c.inverse())` is the identity.
     ///
-    /// Never panics. It relies on the type's invariant that the value is a
-    /// versor (every constructor builds one) instead of re-checking it, so
-    /// numerical drift does not turn it into a crash. A value wrapped by
-    /// [`from_versor`](Conformal::from_versor) from something that is not a
-    /// versor gets a meaningless result.
+    /// Never panics for floating-point `T`. It relies on the type's
+    /// invariant that the value is a versor (every constructor builds one)
+    /// instead of re-checking it, so rounding drift does not turn it into a
+    /// crash. A value wrapped by [`from_versor`](Conformal::from_versor), or
+    /// deserialized, from something that is not a versor gets a meaningless
+    /// result, and one of zero norm gets non-finite coefficients. For values
+    /// that come from data, use [`try_inverse`](Conformal::try_inverse).
+    ///
+    /// ```
+    /// use garust_geo::Conformal;
+    ///
+    /// let c = Conformal::<f64>::translator(1.0, 0.0, 0.0) * Conformal::dilator(2.0);
+    /// let id = c.compose(&c.inverse()).versor();
+    /// assert!((id.coeffs[0] - 1.0).abs() < 1e-12);
+    /// ```
     pub fn inverse(&self) -> Self {
         Self {
             versor: crate::versor::inverse_by_construction(&self.versor),
         }
+    }
+
+    /// The inverse transformation, or `None` if the wrapped multivector is
+    /// not a versor within the kernel's tolerance. For values that come
+    /// from data (`from_versor`, serde, bytemuck); values built in code use
+    /// [`inverse`](Conformal::inverse).
+    ///
+    /// ```
+    /// use garust_core::Cga3;
+    /// use garust_geo::Conformal;
+    ///
+    /// let c = Conformal::dilator(2.0);
+    /// assert_eq!(c.try_inverse(), Some(c.inverse()));
+    ///
+    /// // Rejected: `1 + e1` wrapped as a conformal map is not a versor.
+    /// let bogus = Conformal::from_versor(Cga3::one() + Cga3::basis(1));
+    /// assert!(bogus.try_inverse().is_none());
+    /// ```
+    pub fn try_inverse(&self) -> Option<Self> {
+        self.versor
+            .try_versor_inverse()
+            .map(|versor| Self { versor })
     }
 
     /// `⟨V ~V⟩_0`. Each generator and their products are unit versors,
