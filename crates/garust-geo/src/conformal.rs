@@ -300,6 +300,16 @@ mod tests {
         assert!((id.coeffs[0] - 1.0).abs() < 1e-6);
         let mid = d.slerp(&Conformal::identity(), 0.5);
         assert!(mid.versor().coeffs.iter().all(|x| x.is_finite()));
+        // The checked path for data still refuses it.
+        assert!(d.try_inverse().is_none());
+    }
+
+    #[test]
+    fn try_inverse_matches_inverse_on_a_valid_map_and_refuses_a_non_versor() {
+        let c = Conformal::translator(1.0, 0.0, 0.0) * Conformal::dilator(2.0);
+        assert_eq!(c.try_inverse(), Some(c.inverse()));
+        let bogus = Conformal::from_versor(Cga3::one() + Cga3::basis(1));
+        assert!(bogus.try_inverse().is_none());
     }
 
     fn approx(a: (f64, f64, f64), b: (f64, f64, f64)) {
