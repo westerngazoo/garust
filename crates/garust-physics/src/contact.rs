@@ -1,4 +1,4 @@
-//! Collision detection and frictionless impulse response.
+//! Collision detection and impulse response, with Coulomb friction.
 //!
 //! The next RFC-010 slice on top of the 6-DOF dynamics: **sphere** colliders,
 //! the universal broadphase bound and the simplest exact narrowphase, plus the
@@ -9,9 +9,11 @@
 //! of centres, through both centres, so the normal impulse produces **no
 //! torque** — collision response is pure linear-momentum exchange, with
 //! nothing approximated. That makes it verifiable against the textbook
-//! conservation laws (see the tests). Spin from impact needs a *tangential*
-//! (friction) impulse, and contacts between flats (PGA planes/edges) need
-//! their own narrowphase; both are later slices.
+//! conservation laws (see the tests). Spin from impact comes from the
+//! *tangential* (friction) impulse, which [`resolve_pair`] and
+//! [`resolve_static`] now apply, along with plane and AABB contacts.
+//! Contacts between general flats (PGA planes/edges) still need their own
+//! narrowphase.
 //!
 //! ```
 //! use garust_physics::{RigidBody, contact::{resolve_pair, Sphere}};
