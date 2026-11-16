@@ -191,6 +191,21 @@ mod tests {
     use crate::chain::{Chain, ChainJoint, Link};
     use crate::Motor;
 
+    /// The fallible constructor accepts what `new` accepts and refuses,
+    /// with `None`, each of the three shapes `new` panics on.
+    #[test]
+    fn try_new_refuses_every_bad_shape_without_panicking() {
+        let link = |parent| TreeLink {
+            parent,
+            offset: Motor::identity(),
+            joint: ChainJoint::Prismatic([1.0, 0.0, 0.0]),
+        };
+        assert!(Tree::try_new(&[link(None), link(Some(0))]).is_some());
+        assert!(Tree::try_new(&[]).is_none());
+        assert!(Tree::try_new(&[link(None); super::MAX_LINKS + 1]).is_none());
+        assert!(Tree::try_new(&[link(None), link(Some(1))]).is_none()); // its own parent
+    }
+
     #[test]
     #[should_panic(expected = "a tree needs at least one link")]
     fn empty_tree_is_refused() {
