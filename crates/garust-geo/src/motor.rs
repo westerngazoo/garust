@@ -115,12 +115,54 @@ impl<T: Scalar> Motor<T> {
         }
     }
 
-    /// The inverse motion, undoing this one. Built from the versor
-    /// inverse, so `m.compose(&m.inverse())` is the identity.
+    /// The inverse motion, undoing this one: `~M / ⟨M ~M⟩₀`, so
+    /// `m.compose(&m.inverse())` is the identity.
+    ///
+    /// Never panics for floating-point `T`. It relies on the type's
+    /// invariant that the motor is a versor (every constructor builds one)
+    /// instead of re-checking it, so rounding drift does not turn it into a
+    /// crash; in `f32` a single composition already drifts past the
+    /// kernel's strict check. A motor wrapped by
+    /// [`from_versor`](Motor::from_versor), or deserialized, from something
+    /// that is not a versor gets a meaningless result, and one of zero norm
+    /// gets non-finite coefficients. For motors that come from data, use
+    /// [`try_inverse`](Motor::try_inverse).
+    ///
+    /// ```
+    /// use garust_core::Pga3;
+    /// use garust_geo::Motor;
+    ///
+    /// let m = Motor::translator(1.0, 2.0, 3.0) * Motor::rotor(0.5, Pga3::basis(0b0011));
+    /// let id = m.compose(&m.inverse()).versor();
+    /// assert!((id.coeffs[0] - 1.0).abs() < 1e-12);
+    /// ```
     pub fn inverse(&self) -> Self {
         Self {
-            versor: self.versor.versor_inverse(),
+            versor: crate::versor::inverse_by_construction(&self.versor),
         }
+    }
+
+    /// The inverse motion, or `None` if the wrapped multivector is not a
+    /// versor within the kernel's tolerance (see
+    /// `Multivector::try_versor_inverse`). For motors that come from data
+    /// (`from_versor`, serde, bytemuck); motors built in code use
+    /// [`inverse`](Motor::inverse).
+    ///
+    /// ```
+    /// use garust_core::Pga3;
+    /// use garust_geo::Motor;
+    ///
+    /// let m = Motor::rotor(0.5, Pga3::basis(0b0011));
+    /// assert_eq!(m.try_inverse(), Some(m.inverse()));
+    ///
+    /// // Rejected: `1 + e1` wrapped as a motor is not a versor.
+    /// let bogus = Motor::from_versor(Pga3::one() + Pga3::basis(1));
+    /// assert!(bogus.try_inverse().is_none());
+    /// ```
+    pub fn try_inverse(&self) -> Option<Self> {
+        self.versor
+            .try_versor_inverse()
+            .map(|versor| Self { versor })
     }
 
     /// `⟨M ~M⟩_0`. A unit motor (every rotor/translator and their
@@ -307,13 +349,35 @@ impl Motor<f64> {
     /// or `max_iter` is reached. Typical values: tol=1e-8, max_iter=20.
     ///
     /// # Panics
-    /// Panics if `motors` is empty.
+    /// Panics if `motors` is empty; [`try_frechet_mean`](Motor::try_frechet_mean)
+    /// returns `None` instead.
     pub fn frechet_mean(motors: &[Self], tol: f64, max_iter: usize) -> Self {
-        assert!(
-            !motors.is_empty(),
-            "frechet_mean: motors slice cannot be empty"
-        );
-        let mut mu = motors[0];
+        match Self::try_frechet_mean(motors, tol, max_iter) {
+            Some(mean) => mean,
+            // G3 last-resort assertion: the mean of nothing is undefined, and
+            // a slice that may be empty has `try_frechet_mean`.
+            None => panic!("frechet_mean: motors slice cannot be empty"),
+        }
+    }
+
+    /// Fréchet mean as in [`frechet_mean`](Motor::frechet_mean), or `None`
+    /// if `motors` is empty.
+    ///
+    /// ```
+    /// use garust_core::Pga3;
+    /// use garust_geo::Motor;
+    ///
+    /// let a = Motor::rotor(0.2, Pga3::basis(0b0011));
+    /// let b = Motor::rotor(0.6, Pga3::basis(0b0011));
+    /// let mean = Motor::try_frechet_mean(&[a, b], 1e-10, 20).unwrap();
+    /// let mid = Motor::rotor(0.4, Pga3::basis(0b0011));
+    /// assert!(mean.geodesic_distance(&mid) < 1e-9);
+    ///
+    /// // Rejected: the mean of no motors.
+    /// assert!(Motor::try_frechet_mean(&[], 1e-10, 20).is_none());
+    /// ```
+    pub fn try_frechet_mean(motors: &[Self], tol: f64, max_iter: usize) -> Option<Self> {
+        let mut mu = *motors.first()?;
         let n = motors.len() as f64;
         let n_inv = 1.0 / n;
         for _ in 0..max_iter {
@@ -328,7 +392,7 @@ impl Motor<f64> {
             }
             mu = mu.compose(&Self::from_versor(b_bar.exp()));
         }
-        mu
+        Some(mu)
     }
 
     /// Geodesic (bi-invariant) distance between two motors on the motor
@@ -538,6 +602,11 @@ impl<T: Real> Motor<T> {
     /// let mid = Motor::rotor(theta / 2.0, Pga3::basis(0b0011));
     /// assert!(id.slerp(&near, 0.5).geodesic_distance(&mid) < 1e-9);
     /// ```
+    ///
+    /// Release builds never panic here. Debug builds assert the versor
+    /// contract inside `log` (`R ~R` within 1e-6 of 1); a long chain of
+    /// `f32` compositions can drift past that, so call
+    /// [`renormalize`](Motor::renormalize) every so often in such loops.
     pub fn slerp(&self, other: &Self, t: T) -> Self {
         self.slerp_from_generator(&self.screw_generator(other), t)
     }
@@ -557,7 +626,7 @@ impl<T: Real> Motor<T> {
     /// principal branch, so the span it encodes takes the short way and
     /// carries at most τ/2 of rotation; see [`slerp`](Motor::slerp).
     pub fn screw_generator(&self, other: &Self) -> Pga<T> {
-        (other.versor * self.versor.versor_inverse()).log()
+        (other.versor * self.inverse().versor).log()
     }
 
     /// Evaluate the screw interpolation from `self` along a precomputed
@@ -660,12 +729,37 @@ impl<T: Real> Motor<T> {
     /// # Panics
     ///
     /// If `ctrl` is empty or holds more than 8 motors (fixed stack
-    /// scratch; cubic — 4 controls — is the working case).
+    /// scratch; cubic — 4 controls — is the working case);
+    /// [`try_bezier`](Motor::try_bezier) returns `None` instead.
     pub fn bezier(ctrl: &[Self], t: T) -> Self {
-        assert!(
-            !ctrl.is_empty() && ctrl.len() <= 8,
-            "Motor::bezier takes 1..=8 control motors"
-        );
+        match Self::try_bezier(ctrl, t) {
+            Some(m) => m,
+            // G3 last-resort assertion: the control count is fixed by the
+            // caller's curve; a count that comes from data has `try_bezier`.
+            None => panic!("Motor::bezier takes 1..=8 control motors"),
+        }
+    }
+
+    /// The Bézier curve as in [`bezier`](Motor::bezier), or `None` if
+    /// `ctrl` is empty or holds more than 8 motors.
+    ///
+    /// ```
+    /// use garust_core::Pga3;
+    /// use garust_geo::Motor;
+    ///
+    /// let a = Motor::identity();
+    /// let b = Motor::rotor(0.8, Pga3::basis(0b0011));
+    /// let half = Motor::try_bezier(&[a, b], 0.5).unwrap(); // two controls = slerp
+    /// assert!(half.geodesic_distance(&a.slerp(&b, 0.5)) < 1e-12);
+    ///
+    /// // Rejected: no controls, and more than the 8 the scratch holds.
+    /// assert!(Motor::<f64>::try_bezier(&[], 0.5).is_none());
+    /// assert!(Motor::try_bezier(&[a; 9], 0.5).is_none());
+    /// ```
+    pub fn try_bezier(ctrl: &[Self], t: T) -> Option<Self> {
+        if ctrl.is_empty() || ctrl.len() > 8 {
+            return None;
+        }
         let mut buf = [Self::identity(); 8];
         buf[..ctrl.len()].copy_from_slice(ctrl);
         let mut n = ctrl.len();
@@ -675,7 +769,7 @@ impl<T: Real> Motor<T> {
             }
             n -= 1;
         }
-        buf[0]
+        Some(buf[0])
     }
 }
 
@@ -692,6 +786,83 @@ mod tests {
     use super::Motor;
     use garust_core::Pga3;
     use std::f64::consts::TAU;
+
+    // ── G3: the inverse is total ────────────────────────────────────────
+
+    /// A rotor-translator whose versor has drifted by 1e-8 along the
+    /// pseudoscalar, as rounding does after many compositions. That is
+    /// past the kernel's strict versor check for inversion (1e-10), so
+    /// `inverse` (hence `slerp`) used to panic on it in every build, yet
+    /// well inside the loose contract check of `log` (1e-6, debug only).
+    fn drifted() -> Motor<f64> {
+        let m = Motor::translator(1.0, 2.0, 0.5) * Motor::rotor(0.7, Pga3::basis(0b0011));
+        Motor::from_versor(m.versor() + Pga3::basis(0b1111) * 1e-8)
+    }
+
+    #[test]
+    fn inverse_of_a_drifted_motor_does_not_panic() {
+        let m = drifted();
+        assert!(
+            m.versor().try_versor_inverse().is_none(),
+            "the drift must trip the check"
+        );
+        let id = m.compose(&m.inverse()).versor();
+        assert!((id.coeffs[0] - 1.0).abs() < 1e-7);
+        assert!(id.coeffs[1..].iter().all(|c| c.abs() < 1e-7));
+    }
+
+    #[test]
+    fn slerp_from_a_drifted_motor_does_not_panic() {
+        let m = drifted();
+        let target = Motor::rotor(1.2, Pga3::basis(0b0011));
+        let mid = m.slerp(&target, 0.5);
+        assert!(mid.versor().coeffs.iter().all(|c| c.is_finite()));
+        assert!(m.geodesic_distance(&target).is_finite());
+    }
+
+    /// The same formula as the kernel's checked inverse: a valid motor
+    /// gets the same answer to the last bit.
+    #[test]
+    fn inverse_of_a_valid_motor_matches_the_checked_inverse_exactly() {
+        let m = Motor::translator(1.0, 2.0, 0.5) * Motor::rotor(0.7, Pga3::basis(0b0011));
+        assert_eq!(Some(m.inverse().versor()), m.versor().try_versor_inverse());
+    }
+
+    /// Degenerate: a zero "motor" (only reachable through `from_versor`)
+    /// yields non-finite coefficients instead of a crash.
+    #[test]
+    fn inverse_of_the_zero_motor_is_non_finite_not_a_panic() {
+        let z = Motor::from_versor(Pga3::zero());
+        assert!(z.inverse().versor().coeffs.iter().any(|c| !c.is_finite()));
+    }
+
+    /// The case that made this a real crash: in `f32`, a single
+    /// composition of a translator and two rotors already leaves `M ~M`
+    /// non-scalar beyond the kernel's check, so the old `inverse` panicked
+    /// on ordinary motors. No synthetic drift here.
+    #[test]
+    fn inverse_of_a_composed_f32_motor_does_not_panic() {
+        use garust_core::Pga3f;
+        let m = Motor::<f32>::translator(1.0, 2.0, 0.5)
+            * Motor::rotor(0.7, Pga3f::basis(0b0011))
+            * Motor::rotor(0.3, Pga3f::basis(0b0110));
+        assert!(
+            m.versor().try_versor_inverse().is_none(),
+            "f32 rounding trips the check"
+        );
+        assert!(m.try_inverse().is_none());
+        let id = m.compose(&m.inverse()).versor();
+        assert!((id.coeffs[0] - 1.0).abs() < 1e-5);
+        assert!(id.coeffs[1..].iter().all(|c| c.abs() < 1e-5));
+        let mid = m.slerp(&Motor::identity(), 0.5);
+        assert!(mid.versor().coeffs.iter().all(|c| c.is_finite()));
+    }
+
+    #[test]
+    #[should_panic(expected = "Motor::bezier takes 1..=8 control motors")]
+    fn bezier_with_no_controls_panics_with_a_clear_message() {
+        let _ = Motor::<f64>::bezier(&[], 0.5);
+    }
 
     fn approx_eq(a: &[f64], b: &[f64], tol: f64) {
         assert_eq!(a.len(), b.len());

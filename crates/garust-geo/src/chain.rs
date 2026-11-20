@@ -127,13 +127,37 @@ impl<'a> Chain<'a> {
     ///
     /// # Panics
     ///
-    /// If `links` is empty or longer than [`MAX_LINKS`].
+    /// If `links` is empty or longer than [`MAX_LINKS`];
+    /// [`try_new`](Chain::try_new) returns `None` instead.
     pub fn new(links: &'a [Link]) -> Self {
-        assert!(
-            !links.is_empty() && links.len() <= MAX_LINKS,
-            "Chain takes 1..=MAX_LINKS links"
-        );
-        Self { links }
+        match Self::try_new(links) {
+            Some(chain) => chain,
+            // G3 last-resort assertion: a chain written in code has a known
+            // length; a chain loaded from data has `try_new`.
+            None => panic!("Chain takes 1..=MAX_LINKS links"),
+        }
+    }
+
+    /// Wrap a slice of links as a chain, or `None` if it is empty or
+    /// longer than [`MAX_LINKS`].
+    ///
+    /// ```
+    /// use garust_geo::chain::{Chain, ChainJoint, Link, MAX_LINKS};
+    /// use garust_geo::Motor;
+    ///
+    /// let link = Link { offset: Motor::identity(), joint: ChainJoint::Prismatic([1.0, 0.0, 0.0]) };
+    /// let links = [link; 3];
+    /// assert_eq!(Chain::try_new(&links).map(|c| c.dof()), Some(3));
+    ///
+    /// // Rejected: no links, and one more than the cap.
+    /// assert!(Chain::try_new(&[]).is_none());
+    /// assert!(Chain::try_new(&[link; MAX_LINKS + 1]).is_none());
+    /// ```
+    pub fn try_new(links: &'a [Link]) -> Option<Self> {
+        if links.is_empty() || links.len() > MAX_LINKS {
+            return None;
+        }
+        Some(Self { links })
     }
 
     /// Number of degrees of freedom (one per link).
@@ -148,6 +172,8 @@ impl<'a> Chain<'a> {
     ///
     /// If `q.len() != self.dof()`.
     pub fn fk(&self, q: &[f64]) -> Motor<f64> {
+        // G3 last-resort assertion: `q` is built for this chain by the
+        // caller; a wrong length is a bug in that code, not data.
         assert_eq!(q.len(), self.links.len(), "joint vector length != dof");
         let mut pose = Motor::identity();
         for (link, &qi) in self.links.iter().zip(q.iter()) {
@@ -189,6 +215,8 @@ impl<'a> Chain<'a> {
         params: IkParams,
     ) -> IkResult {
         let n = self.links.len();
+        // G3 last-resort assertions: the seed and output buffers are sized by
+        // the caller for this chain; a wrong length is a bug in that code.
         assert_eq!(q0.len(), n, "seed length != dof");
         assert_eq!(out.len(), n, "output length != dof");
 

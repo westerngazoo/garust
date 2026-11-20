@@ -118,12 +118,50 @@ impl<T: Scalar> Conformal<T> {
         }
     }
 
-    /// The inverse transformation, undoing this one. Built from the
-    /// versor inverse, so `c.compose(&c.inverse())` is the identity.
+    /// The inverse transformation, undoing this one: `~V / ⟨V ~V⟩₀`, so
+    /// `c.compose(&c.inverse())` is the identity.
+    ///
+    /// Never panics for floating-point `T`. It relies on the type's
+    /// invariant that the value is a versor (every constructor builds one)
+    /// instead of re-checking it, so rounding drift does not turn it into a
+    /// crash. A value wrapped by [`from_versor`](Conformal::from_versor), or
+    /// deserialized, from something that is not a versor gets a meaningless
+    /// result, and one of zero norm gets non-finite coefficients. For values
+    /// that come from data, use [`try_inverse`](Conformal::try_inverse).
+    ///
+    /// ```
+    /// use garust_geo::Conformal;
+    ///
+    /// let c = Conformal::<f64>::translator(1.0, 0.0, 0.0) * Conformal::dilator(2.0);
+    /// let id = c.compose(&c.inverse()).versor();
+    /// assert!((id.coeffs[0] - 1.0).abs() < 1e-12);
+    /// ```
     pub fn inverse(&self) -> Self {
         Self {
-            versor: self.versor.versor_inverse(),
+            versor: crate::versor::inverse_by_construction(&self.versor),
         }
+    }
+
+    /// The inverse transformation, or `None` if the wrapped multivector is
+    /// not a versor within the kernel's tolerance. For values that come
+    /// from data (`from_versor`, serde, bytemuck); values built in code use
+    /// [`inverse`](Conformal::inverse).
+    ///
+    /// ```
+    /// use garust_core::Cga3;
+    /// use garust_geo::Conformal;
+    ///
+    /// let c = Conformal::dilator(2.0);
+    /// assert_eq!(c.try_inverse(), Some(c.inverse()));
+    ///
+    /// // Rejected: `1 + e1` wrapped as a conformal map is not a versor.
+    /// let bogus = Conformal::from_versor(Cga3::one() + Cga3::basis(1));
+    /// assert!(bogus.try_inverse().is_none());
+    /// ```
+    pub fn try_inverse(&self) -> Option<Self> {
+        self.versor
+            .try_versor_inverse()
+            .map(|versor| Self { versor })
     }
 
     /// `⟨V ~V⟩_0`. Each generator and their products are unit versors,
@@ -226,7 +264,7 @@ impl<T: Real> Conformal<T> {
     /// intermediate scales (geometric mean at `t = ½`), and mixtures
     /// spiral. `t` outside `[0, 1]` extrapolates.
     pub fn slerp(&self, other: &Self, t: T) -> Self {
-        let delta = (other.versor * self.versor.versor_inverse()).log();
+        let delta = (other.versor * self.inverse().versor).log();
         Self {
             versor: (delta * t).exp() * self.versor,
         }
@@ -246,6 +284,33 @@ mod tests {
     use super::Conformal;
     use garust_core::Cga3;
     use std::f64::consts::TAU;
+
+    /// G3: a conformal versor that drifted past the kernel's strict versor
+    /// check for inversion (here by 1e-8 along a grade-4 blade; the check
+    /// is 1e-10) is still inverted and interpolated without a panic.
+    #[test]
+    fn inverse_and_slerp_of_a_drifted_versor_do_not_panic() {
+        let c = Conformal::translator(1.0, 0.0, 0.0) * Conformal::dilator(2.0);
+        let d = Conformal::from_versor(c.versor() + Cga3::basis(0b01111) * 1e-8);
+        assert!(
+            d.versor().try_versor_inverse().is_none(),
+            "the drift must trip the check"
+        );
+        let id = d.compose(&d.inverse()).versor();
+        assert!((id.coeffs[0] - 1.0).abs() < 1e-6);
+        let mid = d.slerp(&Conformal::identity(), 0.5);
+        assert!(mid.versor().coeffs.iter().all(|x| x.is_finite()));
+        // The checked path for data still refuses it.
+        assert!(d.try_inverse().is_none());
+    }
+
+    #[test]
+    fn try_inverse_matches_inverse_on_a_valid_map_and_refuses_a_non_versor() {
+        let c = Conformal::translator(1.0, 0.0, 0.0) * Conformal::dilator(2.0);
+        assert_eq!(c.try_inverse(), Some(c.inverse()));
+        let bogus = Conformal::from_versor(Cga3::one() + Cga3::basis(1));
+        assert!(bogus.try_inverse().is_none());
+    }
 
     fn approx(a: (f64, f64, f64), b: (f64, f64, f64)) {
         assert!((a.0 - b.0).abs() < 1e-10, "x: {} vs {}", a.0, b.0);
